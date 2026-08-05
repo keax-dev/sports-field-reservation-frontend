@@ -1,9 +1,0 @@
-.bg-selected:hover {
-    background-color: rgb(108, 117, 125) !important;
-    transition: .3s;
-}
-
-.bg-selected:hover p {
-    color: white !important;
-    transition: .3s;
-}
