@@ -27,6 +27,7 @@ export class MaintenanceBlockFacade {
   readonly maintenanceBlocks = signal<MaintenanceBlock[]>([]);
   readonly meta = signal<PaginationMeta | null>(null);
   readonly loading = signal(true);
+  readonly blocksLoading = signal(false);
   readonly saving = signal(false);
   readonly deletingId = signal<number | null>(null);
   readonly error = signal<string | null>(null);
@@ -85,7 +86,7 @@ export class MaintenanceBlockFacade {
       const selectedSportsFieldId = this.form.controls.sportsFieldId.getRawValue();
 
       if (selectedSportsFieldId) {
-        await this.loadMaintenanceBlocks(1, Number(selectedSportsFieldId));
+        void this.loadMaintenanceBlocks(1, Number(selectedSportsFieldId));
       }
     } catch {
       this.error.set('We could not load sports fields.');
@@ -102,9 +103,11 @@ export class MaintenanceBlockFacade {
     if (!sportsFieldId) {
       this.maintenanceBlocks.set([]);
       this.meta.set(null);
+      this.blocksLoading.set(false);
       return;
     }
 
+    this.blocksLoading.set(true);
     this.error.set(null);
 
     try {
@@ -115,6 +118,8 @@ export class MaintenanceBlockFacade {
       this.error.set(getApiErrorMessage(error, 'Maintenance blocks could not be loaded.'));
       this.maintenanceBlocks.set([]);
       this.meta.set(null);
+    } finally {
+      this.blocksLoading.set(false);
     }
   }
 

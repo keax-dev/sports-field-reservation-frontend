@@ -42,7 +42,10 @@ export class ReservationCreateFacade {
   readonly form = this.formBuilder.nonNullable.group({
     customerId: [''],
     venueId: ['', [Validators.required]],
-    sportsFieldId: ['', [Validators.required]],
+    sportsFieldId: this.formBuilder.nonNullable.control(
+      { value: '', disabled: true },
+      { validators: [Validators.required] },
+    ),
     startsAt: ['', [Validators.required]],
     endsAt: ['', [Validators.required]],
     paymentMethod: [''],
@@ -163,7 +166,19 @@ export class ReservationCreateFacade {
     });
 
     this.form.controls.venueId.valueChanges.pipe(takeUntilDestroyed()).subscribe((venueId) => {
-      const selectedSportsFieldId = this.form.controls.sportsFieldId.getRawValue();
+      const sportsFieldControl = this.form.controls.sportsFieldId;
+
+      if (!venueId) {
+        sportsFieldControl.setValue('', { emitEvent: false });
+        sportsFieldControl.disable({ emitEvent: false });
+        return;
+      }
+
+      if (sportsFieldControl.disabled) {
+        sportsFieldControl.enable({ emitEvent: false });
+      }
+
+      const selectedSportsFieldId = sportsFieldControl.getRawValue();
 
       if (selectedSportsFieldId === '') {
         return;
@@ -174,7 +189,7 @@ export class ReservationCreateFacade {
       );
 
       if (!venueId || selectedSportsField?.venue_id !== Number(venueId)) {
-        this.form.controls.sportsFieldId.setValue('');
+        sportsFieldControl.setValue('');
       }
     });
 

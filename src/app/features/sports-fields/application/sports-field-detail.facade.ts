@@ -66,7 +66,9 @@ export class SportsFieldDetailFacade {
     try {
       const sportsField = await firstValueFrom(this.sportsFieldsApi.get(sportsFieldId));
       this.sportsField.set(sportsField);
-      await this.searchAvailability();
+      this.availability.set([]);
+      this.availabilityError.set(null);
+      void this.searchAvailability();
     } catch {
       this.error.set('We could not load this sports field.');
       this.sportsField.set(null);

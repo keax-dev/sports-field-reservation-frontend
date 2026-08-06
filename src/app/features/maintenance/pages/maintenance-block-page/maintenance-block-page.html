@@ -76,11 +76,17 @@
         <div
           class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
         >
-          Loading maintenance data...
+          Loading sports fields...
+        </div>
+      } @else if (blocksLoading()) {
+        <div
+          class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+        >
+          Loading maintenance blocks...
         </div>
       }
 
-      @if (!loading() && maintenanceBlocks().length === 0) {
+      @if (!loading() && !blocksLoading() && maintenanceBlocks().length === 0) {
         <div
           class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
         >

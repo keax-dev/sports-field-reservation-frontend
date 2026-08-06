@@ -60,11 +60,7 @@
 
           <div hlmField>
             <label hlmFieldLabel for="reservation-sports-field">Sports field</label>
-            <hlm-native-select
-              id="reservation-sports-field"
-              formControlName="sportsFieldId"
-              [disabled]="selectedVenueId() === null"
-            >
+            <hlm-native-select id="reservation-sports-field" formControlName="sportsFieldId">
               <option value="">
                 {{ selectedVenueId() === null ? 'Select a venue first' : 'Select a sports field' }}
               </option>

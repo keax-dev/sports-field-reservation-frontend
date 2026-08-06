@@ -33,6 +33,7 @@ export class MaintenanceBlockPage {
   readonly maintenanceBlocks = this.facade.maintenanceBlocks;
   readonly meta = this.facade.meta;
   readonly loading = this.facade.loading;
+  readonly blocksLoading = this.facade.blocksLoading;
   readonly saving = this.facade.saving;
   readonly deletingId = this.facade.deletingId;
   readonly error = this.facade.error;

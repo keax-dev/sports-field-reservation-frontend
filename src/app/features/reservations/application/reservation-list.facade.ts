@@ -58,7 +58,7 @@ export class ReservationListFacade {
 
       this.reservations.set(response.data);
       this.meta.set(response.meta);
-      await this.loadVenueNames(response.data);
+      void this.loadVenueNames(response.data);
     } catch {
       this.error.set('We could not load your reservations.');
       this.reservations.set([]);
@@ -91,7 +91,11 @@ export class ReservationListFacade {
   }
 
   venueLabel(reservation: Reservation): string {
-    return this.venueNames()[reservation.venue_id] ?? 'Venue unavailable';
+    if (reservation.venue_id <= 0) {
+      return 'Venue unavailable';
+    }
+
+    return this.venueNames()[reservation.venue_id] ?? 'Loading venue...';
   }
 
   private async loadVenueNames(reservations: Reservation[]): Promise<void> {
