@@ -9,17 +9,20 @@ import {
 import type { PaginationMeta } from '../../../shared/types/api.types';
 import type { Reservation, ReservationStatus } from '../../../shared/types/domain.types';
 import { paymentStatusTone, reservationStatusTone } from '../../../shared/utils/domain-presenters';
+import { VenuesApi } from '../../venues/data-access/venues-api';
 import { ReservationsApi } from '../data-access/reservations-api';
 
 @Service({ autoProvided: false })
 export class ReservationListFacade {
   private readonly formBuilder = inject(FormBuilder);
   private readonly reservationsApi = inject(ReservationsApi);
+  private readonly venuesApi = inject(VenuesApi);
 
   readonly reservations = signal<Reservation[]>([]);
   readonly meta = signal<PaginationMeta | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+  private readonly venueNames = signal<Record<number, string>>({});
 
   readonly filtersForm = this.formBuilder.nonNullable.group({
     status: [''],
@@ -55,6 +58,7 @@ export class ReservationListFacade {
 
       this.reservations.set(response.data);
       this.meta.set(response.meta);
+      await this.loadVenueNames(response.data);
     } catch {
       this.error.set('We could not load your reservations.');
       this.reservations.set([]);
@@ -84,5 +88,39 @@ export class ReservationListFacade {
 
   paymentStatusLabel(status: Reservation['payment_status']): string {
     return PAYMENT_STATUS_LABELS[status];
+  }
+
+  venueLabel(reservation: Reservation): string {
+    return this.venueNames()[reservation.venue_id] ?? 'Venue unavailable';
+  }
+
+  private async loadVenueNames(reservations: Reservation[]): Promise<void> {
+    const knownVenueNames = this.venueNames();
+    const missingVenueIds = [...new Set(reservations.map((reservation) => reservation.venue_id))]
+      .filter((venueId) => venueId > 0)
+      .filter((venueId) => !(venueId in knownVenueNames));
+
+    if (missingVenueIds.length === 0) {
+      return;
+    }
+
+    const venueResults = await Promise.allSettled(
+      missingVenueIds.map(async (venueId) => ({
+        venueId,
+        venueName: (await firstValueFrom(this.venuesApi.get(venueId))).name,
+      })),
+    );
+
+    this.venueNames.update((currentVenueNames) => {
+      const nextVenueNames = { ...currentVenueNames };
+
+      for (const result of venueResults) {
+        if (result.status === 'fulfilled') {
+          nextVenueNames[result.value.venueId] = result.value.venueName;
+        }
+      }
+
+      return nextVenueNames;
+    });
   }
 }

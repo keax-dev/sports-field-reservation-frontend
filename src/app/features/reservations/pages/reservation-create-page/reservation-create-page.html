@@ -49,10 +49,26 @@
           }
 
           <div hlmField>
+            <label hlmFieldLabel for="reservation-venue">Venue</label>
+            <hlm-native-select id="reservation-venue" formControlName="venueId">
+              <option value="">Select a venue</option>
+              @for (venue of venues(); track venue.id) {
+                <option [value]="venue.id">{{ venue.name }} · {{ venue.city }}</option>
+              }
+            </hlm-native-select>
+          </div>
+
+          <div hlmField>
             <label hlmFieldLabel for="reservation-sports-field">Sports field</label>
-            <hlm-native-select id="reservation-sports-field" formControlName="sportsFieldId">
-              <option value="">Select a sports field</option>
-              @for (sportsField of sportsFields(); track sportsField.id) {
+            <hlm-native-select
+              id="reservation-sports-field"
+              formControlName="sportsFieldId"
+              [disabled]="selectedVenueId() === null"
+            >
+              <option value="">
+                {{ selectedVenueId() === null ? 'Select a venue first' : 'Select a sports field' }}
+              </option>
+              @for (sportsField of filteredSportsFields(); track sportsField.id) {
                 <option [value]="sportsField.id">
                   {{ sportsField.name }} · {{ sportTypeLabel(sportsField.sport_type) }}
                 </option>
@@ -90,6 +106,14 @@
             </hlm-native-select>
           </div>
         </div>
+
+        @if (selectedVenueId() !== null && filteredSportsFields().length === 0) {
+          <div
+            class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            There are no sports fields available for the selected venue.
+          </div>
+        }
 
         <div hlmField>
           <label hlmFieldLabel for="reservation-notes">Notes</label>

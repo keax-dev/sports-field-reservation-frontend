@@ -1,5 +1,5 @@
-import { effect, inject, Service, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { computed, effect, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { map } from 'rxjs';
@@ -9,7 +9,12 @@ import { NotificationStore } from '../../../core/notifications/notification-stor
 import { PAYMENT_METHOD_OPTIONS, SPORT_TYPE_LABELS } from '../../../shared/constants/options';
 import { toApiDateTime, toDateTimeLocalValue } from '../../../shared/utils/date-time.utils';
 import { getApiErrorMessage } from '../../../shared/utils/http-error.utils';
-import type { PaymentMethod, SportsField, User } from '../../../shared/types/domain.types';
+import type {
+  PaymentMethod,
+  SportsField,
+  User,
+  VenueSummary,
+} from '../../../shared/types/domain.types';
 import { UsersApi } from '../../admin/data-access/users-api';
 import { SportsFieldsApi } from '../../sports-fields/data-access/sports-fields-api';
 import { ReservationsApi } from '../data-access/reservations-api';
@@ -36,6 +41,7 @@ export class ReservationCreateFacade {
 
   readonly form = this.formBuilder.nonNullable.group({
     customerId: [''],
+    venueId: ['', [Validators.required]],
     sportsFieldId: ['', [Validators.required]],
     startsAt: ['', [Validators.required]],
     endsAt: ['', [Validators.required]],
@@ -44,9 +50,53 @@ export class ReservationCreateFacade {
     autoConfirm: [false],
   });
 
+  private readonly selectedVenueValue = toSignal(this.form.controls.venueId.valueChanges, {
+    initialValue: this.form.controls.venueId.getRawValue(),
+  });
+
+  private readonly selectedSportsFieldValue = toSignal(
+    this.form.controls.sportsFieldId.valueChanges,
+    {
+      initialValue: this.form.controls.sportsFieldId.getRawValue(),
+    },
+  );
+
+  readonly selectedVenueId = computed(() => {
+    const venueId = this.selectedVenueValue();
+
+    return venueId === '' ? null : Number(venueId);
+  });
+
+  readonly filteredSportsFields = computed(() => {
+    const venueId = this.selectedVenueId();
+
+    if (venueId === null) {
+      return [];
+    }
+
+    return this.sportsFields()
+      .filter((sportsField) => sportsField.venue_id === venueId)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  });
+
+  readonly venues = computed<VenueSummary[]>(() => {
+    const uniqueVenues = new Map<number, VenueSummary>();
+
+    for (const sportsField of this.sportsFields()) {
+      if (!sportsField.venue || uniqueVenues.has(sportsField.venue.id)) {
+        continue;
+      }
+
+      uniqueVenues.set(sportsField.venue.id, sportsField.venue);
+    }
+
+    return [...uniqueVenues.values()].sort((left, right) => left.name.localeCompare(right.name));
+  });
+
   private readonly queryParams = toSignal(
     this.route.queryParamMap.pipe(
       map((params) => ({
+        venueId: params.get('venueId'),
         sportsFieldId: params.get('sportsFieldId'),
         startsAt: params.get('startsAt'),
         endsAt: params.get('endsAt'),
@@ -55,6 +105,7 @@ export class ReservationCreateFacade {
     ),
     {
       initialValue: {
+        venueId: this.route.snapshot.queryParamMap.get('venueId'),
         sportsFieldId: this.route.snapshot.queryParamMap.get('sportsFieldId'),
         startsAt: this.route.snapshot.queryParamMap.get('startsAt'),
         endsAt: this.route.snapshot.queryParamMap.get('endsAt'),
@@ -66,6 +117,10 @@ export class ReservationCreateFacade {
   constructor() {
     effect(() => {
       const queryParams = this.queryParams();
+
+      if (queryParams.venueId) {
+        this.form.controls.venueId.setValue(queryParams.venueId);
+      }
 
       if (queryParams.sportsFieldId) {
         this.form.controls.sportsFieldId.setValue(queryParams.sportsFieldId);
@@ -84,6 +139,45 @@ export class ReservationCreateFacade {
       }
     });
 
+    effect(() => {
+      const selectedSportsFieldId = this.selectedSportsFieldValue();
+
+      if (selectedSportsFieldId === '') {
+        return;
+      }
+
+      const selectedSportsField = this.sportsFields().find(
+        (sportsField) => sportsField.id === Number(selectedSportsFieldId),
+      );
+
+      if (!selectedSportsField) {
+        return;
+      }
+
+      const currentVenueId = this.form.controls.venueId.getRawValue();
+      const expectedVenueId = String(selectedSportsField.venue_id);
+
+      if (currentVenueId !== expectedVenueId) {
+        this.form.controls.venueId.setValue(expectedVenueId);
+      }
+    });
+
+    this.form.controls.venueId.valueChanges.pipe(takeUntilDestroyed()).subscribe((venueId) => {
+      const selectedSportsFieldId = this.form.controls.sportsFieldId.getRawValue();
+
+      if (selectedSportsFieldId === '') {
+        return;
+      }
+
+      const selectedSportsField = this.sportsFields().find(
+        (sportsField) => sportsField.id === Number(selectedSportsFieldId),
+      );
+
+      if (!venueId || selectedSportsField?.venue_id !== Number(venueId)) {
+        this.form.controls.sportsFieldId.setValue('');
+      }
+    });
+
     void this.loadDependencies();
   }
 
@@ -92,8 +186,7 @@ export class ReservationCreateFacade {
     this.formError.set(null);
 
     try {
-      const sportsFieldsResponse = await firstValueFrom(this.sportsFieldsApi.list());
-      this.sportsFields.set(sportsFieldsResponse.data);
+      this.sportsFields.set(await this.loadAllSportsFields());
 
       if (this.authSession.isAdmin()) {
         const customersResponse = await firstValueFrom(this.usersApi.list({ role: 'customer' }));
@@ -159,4 +252,20 @@ export class ReservationCreateFacade {
   }
 
   sportTypeLabel = (sportType: keyof typeof SPORT_TYPE_LABELS) => SPORT_TYPE_LABELS[sportType];
+
+  private async loadAllSportsFields(): Promise<SportsField[]> {
+    const sportsFields: SportsField[] = [];
+    let page = 1;
+
+    while (true) {
+      const response = await firstValueFrom(this.sportsFieldsApi.list({ page }));
+      sportsFields.push(...response.data);
+
+      if (page >= response.meta.last_page) {
+        return sportsFields;
+      }
+
+      page += 1;
+    }
+  }
 }

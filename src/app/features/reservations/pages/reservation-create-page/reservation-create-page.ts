@@ -30,13 +30,16 @@ import { ReservationCreateFacade } from '../../application/reservation-create.fa
 export class ReservationCreatePage {
   readonly facade = inject(ReservationCreateFacade);
   readonly authSession = this.facade.authSession;
+  readonly venues = this.facade.venues;
   readonly sportsFields = this.facade.sportsFields;
+  readonly filteredSportsFields = this.facade.filteredSportsFields;
   readonly customers = this.facade.customers;
   readonly loading = this.facade.loading;
   readonly submitting = this.facade.submitting;
   readonly formError = this.facade.formError;
   readonly paymentMethodOptions = this.facade.paymentMethodOptions;
   readonly form = this.facade.form;
+  readonly selectedVenueId = this.facade.selectedVenueId;
   readonly submit = this.facade.submit.bind(this.facade);
   readonly sportTypeLabel = this.facade.sportTypeLabel;
 }

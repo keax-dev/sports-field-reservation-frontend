@@ -45,4 +45,5 @@ export class ReservationListPage {
   readonly goToPage = this.facade.goToPage.bind(this.facade);
   readonly reservationStatusLabel = this.facade.reservationStatusLabel.bind(this.facade);
   readonly paymentStatusLabel = this.facade.paymentStatusLabel.bind(this.facade);
+  readonly venueLabel = this.facade.venueLabel.bind(this.facade);
 }
