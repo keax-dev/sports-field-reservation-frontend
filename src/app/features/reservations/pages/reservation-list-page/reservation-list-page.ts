@@ -1,8 +1,7 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { Component, inject } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmCardImports } from '@spartan-ng/helm/card';
 import { HlmFieldImports } from '@spartan-ng/helm/field';
@@ -10,21 +9,11 @@ import { HlmInputImports } from '@spartan-ng/helm/input';
 import { HlmNativeSelectImports } from '@spartan-ng/helm/native-select';
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
 import { StatusBadge } from '../../../../shared/components/status-badge/status-badge';
-import {
-  PAYMENT_STATUS_LABELS,
-  RESERVATION_STATUS_LABELS,
-  RESERVATION_STATUS_OPTIONS,
-} from '../../../../shared/constants/options';
-import type { PaginationMeta } from '../../../../shared/types/api.types';
-import type { Reservation, ReservationStatus } from '../../../../shared/types/domain.types';
-import {
-  paymentStatusTone,
-  reservationStatusTone,
-} from '../../../../shared/utils/domain-presenters';
-import { ReservationsApi } from '../../data-access/reservations-api';
+import { ReservationListFacade } from '../../application/reservation-list.facade';
 
 @Component({
   selector: 'app-reservation-list-page',
+  providers: [ReservationListFacade],
   imports: [
     RouterLink,
     ReactiveFormsModule,
@@ -42,77 +31,18 @@ import { ReservationsApi } from '../../data-access/reservations-api';
   styleUrl: './reservation-list-page.css',
 })
 export class ReservationListPage {
-  private readonly formBuilder = inject(FormBuilder);
-  private readonly reservationsApi = inject(ReservationsApi);
-
-  readonly reservations = signal<Reservation[]>([]);
-  readonly meta = signal<PaginationMeta | null>(null);
-  readonly loading = signal(true);
-  readonly error = signal<string | null>(null);
-
-  readonly filtersForm = this.formBuilder.nonNullable.group({
-    status: [''],
-    dateFrom: [''],
-    dateTo: [''],
-  });
-
-  readonly statusOptions = RESERVATION_STATUS_OPTIONS;
-
-  constructor() {
-    void this.loadReservations();
-  }
-
-  async loadReservations(page = 1): Promise<void> {
-    this.loading.set(true);
-    this.error.set(null);
-
-    try {
-      const status = this.filtersForm.controls.status.getRawValue();
-      const dateFrom = this.filtersForm.controls.dateFrom.getRawValue();
-      const dateTo = this.filtersForm.controls.dateTo.getRawValue();
-
-      const response = await firstValueFrom(
-        this.reservationsApi.list({
-          page,
-          ...(status ? { status: status as ReservationStatus } : {}),
-          ...(dateFrom ? { dateFrom } : {}),
-          ...(dateTo ? { dateTo } : {}),
-        }),
-      );
-
-      this.reservations.set(response.data);
-      this.meta.set(response.meta);
-    } catch {
-      this.error.set('We could not load your reservations.');
-      this.reservations.set([]);
-      this.meta.set(null);
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  async applyFilters(): Promise<void> {
-    await this.loadReservations(1);
-  }
-
-  async goToPage(page: number): Promise<void> {
-    const meta = this.meta();
-
-    if (!meta || page < 1 || page > meta.last_page) {
-      return;
-    }
-
-    await this.loadReservations(page);
-  }
-
-  reservationStatusLabel(status: Reservation['status']): string {
-    return RESERVATION_STATUS_LABELS[status];
-  }
-
-  paymentStatusLabel(status: Reservation['payment_status']): string {
-    return PAYMENT_STATUS_LABELS[status];
-  }
-
-  reservationTone = reservationStatusTone;
-  paymentTone = paymentStatusTone;
+  readonly facade = inject(ReservationListFacade);
+  readonly reservations = this.facade.reservations;
+  readonly meta = this.facade.meta;
+  readonly loading = this.facade.loading;
+  readonly error = this.facade.error;
+  readonly filtersForm = this.facade.filtersForm;
+  readonly statusOptions = this.facade.statusOptions;
+  readonly reservationTone = this.facade.reservationTone;
+  readonly paymentTone = this.facade.paymentTone;
+  readonly loadReservations = this.facade.loadReservations.bind(this.facade);
+  readonly applyFilters = this.facade.applyFilters.bind(this.facade);
+  readonly goToPage = this.facade.goToPage.bind(this.facade);
+  readonly reservationStatusLabel = this.facade.reservationStatusLabel.bind(this.facade);
+  readonly paymentStatusLabel = this.facade.paymentStatusLabel.bind(this.facade);
 }
