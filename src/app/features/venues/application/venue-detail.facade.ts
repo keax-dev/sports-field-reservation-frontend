@@ -1,8 +1,7 @@
-import { effect, inject, Service, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { DestroyRef, effect, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { map } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { finalize, map } from 'rxjs';
 import { SPORT_TYPE_LABELS } from '../../../shared/constants/options';
 import type { Venue } from '../../../shared/types/domain.types';
 import { activeTone } from '../../../shared/utils/domain-presenters';
@@ -12,6 +11,7 @@ import { VenuesApi } from '../data-access/venues-api';
 export class VenueDetailFacade {
   private readonly route = inject(ActivatedRoute);
   private readonly venuesApi = inject(VenuesApi);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly venue = signal<Venue | null>(null);
   readonly loading = signal(true);
@@ -32,23 +32,31 @@ export class VenueDetailFacade {
       const venueId = this.venueId();
 
       if (Number.isFinite(venueId) && venueId > 0) {
-        void this.loadVenue(venueId);
+        this.loadVenue(venueId);
       }
     });
   }
 
-  async loadVenue(venueId: number): Promise<void> {
+  loadVenue(venueId: number): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const venue = await firstValueFrom(this.venuesApi.get(venueId));
-      this.venue.set(venue);
-    } catch {
-      this.error.set('We could not load this venue.');
-      this.venue.set(null);
-    } finally {
-      this.loading.set(false);
-    }
+    this.venuesApi
+      .get(venueId)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: (venue) => {
+          this.venue.set(venue);
+        },
+        error: () => {
+          this.error.set('We could not load this venue.');
+          this.venue.set(null);
+        },
+      });
   }
 }

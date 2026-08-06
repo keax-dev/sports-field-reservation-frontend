@@ -1,6 +1,7 @@
-import { inject, Service, signal } from '@angular/core';
+import { DestroyRef, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 import { NotificationStore } from '../../../core/notifications/notification-store';
 import { SPORT_TYPE_LABELS, SPORT_TYPE_OPTIONS } from '../../../shared/constants/options';
 import type { SportType, SportsField, Venue } from '../../../shared/types/domain.types';
@@ -15,6 +16,7 @@ export class SportsFieldManagementFacade {
   private readonly sportsFieldsApi = inject(SportsFieldsApi);
   private readonly venuesApi = inject(VenuesApi);
   private readonly notifications = inject(NotificationStore);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly sportsFields = signal<SportsField[]>([]);
   readonly venues = signal<Venue[]>([]);
@@ -40,28 +42,34 @@ export class SportsFieldManagementFacade {
   });
 
   constructor() {
-    void this.loadDependencies();
+    this.loadDependencies();
   }
 
-  async loadDependencies(): Promise<void> {
+  loadDependencies(): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const [venuesResponse, sportsFieldsResponse] = await Promise.all([
-        firstValueFrom(this.venuesApi.list({ includeInactive: true })),
-        firstValueFrom(this.sportsFieldsApi.list({ includeInactive: true })),
-      ]);
-
-      this.venues.set(venuesResponse.data);
-      this.sportsFields.set(sportsFieldsResponse.data);
-    } catch {
-      this.error.set('We could not load sports fields.');
-      this.venues.set([]);
-      this.sportsFields.set([]);
-    } finally {
-      this.loading.set(false);
-    }
+    forkJoin({
+      venuesResponse: this.venuesApi.list({ includeInactive: true }),
+      sportsFieldsResponse: this.sportsFieldsApi.list({ includeInactive: true }),
+    })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: ({ venuesResponse, sportsFieldsResponse }) => {
+          this.venues.set(venuesResponse.data);
+          this.sportsFields.set(sportsFieldsResponse.data);
+        },
+        error: () => {
+          this.error.set('We could not load sports fields.');
+          this.venues.set([]);
+          this.sportsFields.set([]);
+        },
+      });
   }
 
   editSportsField(sportsField: SportsField): void {
@@ -94,7 +102,7 @@ export class SportsFieldManagementFacade {
     });
   }
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.error.set(null);
 
     if (this.form.invalid) {
@@ -104,43 +112,48 @@ export class SportsFieldManagementFacade {
 
     this.saving.set(true);
 
-    try {
-      const payload = {
-        venue_id: Number(this.form.controls.venueId.getRawValue()),
-        name: this.form.controls.name.getRawValue(),
-        sport_type: this.form.controls.sportType.getRawValue() as SportType,
-        description: this.form.controls.description.getRawValue() || null,
-        hourly_rate: this.form.controls.hourlyRate.getRawValue(),
-        open_time: this.form.controls.openTime.getRawValue(),
-        close_time: this.form.controls.closeTime.getRawValue(),
-        ...(this.form.controls.maxPlayers.getRawValue()
-          ? { max_players: Number(this.form.controls.maxPlayers.getRawValue()) }
-          : {}),
-        is_active: this.form.controls.isActive.getRawValue(),
-      };
+    const payload = {
+      venue_id: Number(this.form.controls.venueId.getRawValue()),
+      name: this.form.controls.name.getRawValue(),
+      sport_type: this.form.controls.sportType.getRawValue() as SportType,
+      description: this.form.controls.description.getRawValue() || null,
+      hourly_rate: this.form.controls.hourlyRate.getRawValue(),
+      open_time: this.form.controls.openTime.getRawValue(),
+      close_time: this.form.controls.closeTime.getRawValue(),
+      ...(this.form.controls.maxPlayers.getRawValue()
+        ? { max_players: Number(this.form.controls.maxPlayers.getRawValue()) }
+        : {}),
+      is_active: this.form.controls.isActive.getRawValue(),
+    };
 
-      const sportsFieldId = this.editingSportsFieldId();
+    const sportsFieldId = this.editingSportsFieldId();
+    const request$ =
+      sportsFieldId === null
+        ? this.sportsFieldsApi.create(payload)
+        : this.sportsFieldsApi.update(sportsFieldId, payload);
 
-      if (sportsFieldId === null) {
-        await firstValueFrom(this.sportsFieldsApi.create(payload));
-        this.notifications.show({
-          tone: 'success',
-          title: 'Sports field created successfully.',
-        });
-      } else {
-        await firstValueFrom(this.sportsFieldsApi.update(sportsFieldId, payload));
-        this.notifications.show({
-          tone: 'success',
-          title: 'Sports field updated successfully.',
-        });
-      }
-
-      this.resetForm();
-      await this.loadDependencies();
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'The sports field could not be saved.'));
-    } finally {
-      this.saving.set(false);
-    }
+    request$
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.saving.set(false);
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.notifications.show({
+            tone: 'success',
+            title:
+              sportsFieldId === null
+                ? 'Sports field created successfully.'
+                : 'Sports field updated successfully.',
+          });
+          this.resetForm();
+          this.loadDependencies();
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'The sports field could not be saved.'));
+        },
+      });
   }
 }

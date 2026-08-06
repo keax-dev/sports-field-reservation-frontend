@@ -1,7 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { finalize } from 'rxjs';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmCardImports } from '@spartan-ng/helm/card';
 import { HlmFieldImports } from '@spartan-ng/helm/field';
@@ -33,6 +34,7 @@ export class LoginPage {
   private readonly notifications = inject(NotificationStore);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly submitting = signal(false);
   readonly submitted = signal(false);
@@ -45,7 +47,7 @@ export class LoginPage {
     tokenName: ['frontend-web'],
   });
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.submitted.set(true);
     this.serverError.set(null);
     this.validationErrors.set({});
@@ -57,30 +59,35 @@ export class LoginPage {
 
     this.submitting.set(true);
 
-    try {
-      const session = await firstValueFrom(
-        this.authApi.login({
-          email: this.form.controls.email.getRawValue(),
-          password: this.form.controls.password.getRawValue(),
-          token_name: this.form.controls.tokenName.getRawValue(),
+    this.authApi
+      .login({
+        email: this.form.controls.email.getRawValue(),
+        password: this.form.controls.password.getRawValue(),
+        token_name: this.form.controls.tokenName.getRawValue(),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.submitting.set(false);
         }),
-      );
+      )
+      .subscribe({
+        next: (session) => {
+          this.authSession.setSession(session);
+          this.notifications.show({
+            tone: 'success',
+            title: 'Welcome back.',
+            description: 'Your session is ready.',
+          });
 
-      this.authSession.setSession(session);
-      this.notifications.show({
-        tone: 'success',
-        title: 'Welcome back.',
-        description: 'Your session is ready.',
+          const redirect = this.route.snapshot.queryParamMap.get('redirect') ?? '/reservations';
+          void this.router.navigateByUrl(redirect);
+        },
+        error: (error: unknown) => {
+          this.serverError.set(getApiErrorMessage(error, 'We could not sign you in.'));
+          this.validationErrors.set(getValidationErrors(error));
+        },
       });
-
-      const redirect = this.route.snapshot.queryParamMap.get('redirect') ?? '/reservations';
-      await this.router.navigateByUrl(redirect);
-    } catch (error: unknown) {
-      this.serverError.set(getApiErrorMessage(error, 'We could not sign you in.'));
-      this.validationErrors.set(getValidationErrors(error));
-    } finally {
-      this.submitting.set(false);
-    }
   }
 
   fieldError(fieldName: 'email' | 'password'): string | null {

@@ -1,7 +1,7 @@
-import { computed, inject, Service, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Service, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 import { NotificationStore } from '../../../core/notifications/notification-store';
 import type { StaffAssignment, User, Venue } from '../../../shared/types/domain.types';
 import { getApiErrorMessage } from '../../../shared/utils/http-error.utils';
@@ -21,6 +21,7 @@ export class StaffAssignmentFacade {
   private readonly usersApi = inject(UsersApi);
   private readonly venuesApi = inject(VenuesApi);
   private readonly notifications = inject(NotificationStore);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly loading = signal(true);
   readonly saving = signal(false);
@@ -59,32 +60,38 @@ export class StaffAssignmentFacade {
       this.syncSelection(userId);
     });
 
-    void this.loadDependencies();
+    this.loadDependencies();
   }
 
-  async loadDependencies(): Promise<void> {
+  loadDependencies(): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const [assignmentsResponse, usersResponse, venuesResponse] = await Promise.all([
-        firstValueFrom(this.staffAssignmentsApi.list()),
-        firstValueFrom(this.usersApi.list({ role: 'staff' })),
-        firstValueFrom(this.venuesApi.list({ includeInactive: true })),
-      ]);
-
-      this.assignments.set(assignmentsResponse);
-      this.staffUsers.set(usersResponse.data);
-      this.venues.set(venuesResponse.data);
-      this.syncSelection(this.form.controls.userId.getRawValue());
-    } catch {
-      this.error.set('We could not load staff assignments.');
-      this.assignments.set([]);
-      this.staffUsers.set([]);
-      this.venues.set([]);
-    } finally {
-      this.loading.set(false);
-    }
+    forkJoin({
+      assignmentsResponse: this.staffAssignmentsApi.list(),
+      usersResponse: this.usersApi.list({ role: 'staff' }),
+      venuesResponse: this.venuesApi.list({ includeInactive: true }),
+    })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: ({ assignmentsResponse, usersResponse, venuesResponse }) => {
+          this.assignments.set(assignmentsResponse);
+          this.staffUsers.set(usersResponse.data);
+          this.venues.set(venuesResponse.data);
+          this.syncSelection(this.form.controls.userId.getRawValue());
+        },
+        error: () => {
+          this.error.set('We could not load staff assignments.');
+          this.assignments.set([]);
+          this.staffUsers.set([]);
+          this.venues.set([]);
+        },
+      });
   }
 
   toggleVenueSelection(venueId: number, checked: boolean): void {
@@ -99,7 +106,7 @@ export class StaffAssignmentFacade {
     });
   }
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.error.set(null);
 
     if (this.form.invalid) {
@@ -109,24 +116,29 @@ export class StaffAssignmentFacade {
 
     this.saving.set(true);
 
-    try {
-      await firstValueFrom(
-        this.staffAssignmentsApi.saveAssignments({
-          user_id: Number(this.form.controls.userId.getRawValue()),
-          venue_ids: this.selectedVenueIds(),
+    this.staffAssignmentsApi
+      .saveAssignments({
+        user_id: Number(this.form.controls.userId.getRawValue()),
+        venue_ids: this.selectedVenueIds(),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.saving.set(false);
         }),
-      );
-
-      this.notifications.show({
-        tone: 'success',
-        title: 'Staff assignments updated successfully.',
+      )
+      .subscribe({
+        next: () => {
+          this.notifications.show({
+            tone: 'success',
+            title: 'Staff assignments updated successfully.',
+          });
+          this.loadDependencies();
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'Staff assignments could not be updated.'));
+        },
       });
-      await this.loadDependencies();
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'Staff assignments could not be updated.'));
-    } finally {
-      this.saving.set(false);
-    }
   }
 
   private syncSelection(userId: string): void {

@@ -1,5 +1,6 @@
-import { computed, inject, Service, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { computed, DestroyRef, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { finalize, forkJoin } from 'rxjs';
 import { AuthSession } from '../../../core/auth/auth-session';
 import { SPORT_TYPE_LABELS } from '../../../shared/constants/options';
 import type { SportsField, Venue } from '../../../shared/types/domain.types';
@@ -11,6 +12,7 @@ import { VenuesApi } from '../../venues/data-access/venues-api';
 export class HomeFacade {
   private readonly venuesApi = inject(VenuesApi);
   private readonly sportsFieldsApi = inject(SportsFieldsApi);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly authSession = inject(AuthSession);
   readonly loading = signal(true);
@@ -32,26 +34,32 @@ export class HomeFacade {
   readonly venueStatusTone = activeTone;
 
   constructor() {
-    void this.loadDashboard();
+    this.loadDashboard();
   }
 
-  async loadDashboard(): Promise<void> {
+  loadDashboard(): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const [venuesResponse, sportsFieldsResponse] = await Promise.all([
-        firstValueFrom(this.venuesApi.list({ includeFields: true })),
-        firstValueFrom(this.sportsFieldsApi.list()),
-      ]);
-
-      this.venues.set(venuesResponse.data);
-      this.sportsFields.set(sportsFieldsResponse.data);
-    } catch {
-      this.error.set('We could not load the sports catalog right now.');
-    } finally {
-      this.loading.set(false);
-    }
+    forkJoin({
+      venuesResponse: this.venuesApi.list({ includeFields: true }),
+      sportsFieldsResponse: this.sportsFieldsApi.list(),
+    })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: ({ venuesResponse, sportsFieldsResponse }) => {
+          this.venues.set(venuesResponse.data);
+          this.sportsFields.set(sportsFieldsResponse.data);
+        },
+        error: () => {
+          this.error.set('We could not load the sports catalog right now.');
+        },
+      });
   }
 
   sportTypeLabel(sportType: SportsField['sport_type']): string {

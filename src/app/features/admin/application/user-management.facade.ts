@@ -1,7 +1,7 @@
-import { computed, inject, Service, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Service, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 import { NotificationStore } from '../../../core/notifications/notification-store';
 import { USER_ROLE_LABELS, USER_ROLE_OPTIONS } from '../../../shared/constants/options';
 import type { PaginationMeta } from '../../../shared/types/api.types';
@@ -17,6 +17,7 @@ export class UserManagementFacade {
   private readonly usersApi = inject(UsersApi);
   private readonly venuesApi = inject(VenuesApi);
   private readonly notifications = inject(NotificationStore);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly users = signal<User[]>([]);
   readonly venues = signal<Venue[]>([]);
@@ -50,39 +51,43 @@ export class UserManagementFacade {
       }
     });
 
-    void this.loadDependencies();
+    this.loadDependencies();
   }
 
-  async loadDependencies(page = 1): Promise<void> {
+  loadDependencies(page = 1): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const search = this.filterForm.controls.search.getRawValue();
-      const role = this.filterForm.controls.role.getRawValue();
+    const search = this.filterForm.controls.search.getRawValue();
+    const role = this.filterForm.controls.role.getRawValue();
 
-      const [venuesResponse, usersResponse] = await Promise.all([
-        firstValueFrom(this.venuesApi.list({ includeInactive: true })),
-        firstValueFrom(
-          this.usersApi.list({
-            page,
-            ...(search ? { search } : {}),
-            ...(role ? { role: role as UserRole } : {}),
-          }),
-        ),
-      ]);
-
-      this.venues.set(venuesResponse.data);
-      this.users.set(usersResponse.data);
-      this.meta.set(usersResponse.meta);
-    } catch {
-      this.error.set('We could not load users.');
-      this.venues.set([]);
-      this.users.set([]);
-      this.meta.set(null);
-    } finally {
-      this.loading.set(false);
-    }
+    forkJoin({
+      venuesResponse: this.venuesApi.list({ includeInactive: true }),
+      usersResponse: this.usersApi.list({
+        page,
+        ...(search ? { search } : {}),
+        ...(role ? { role: role as UserRole } : {}),
+      }),
+    })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: ({ venuesResponse, usersResponse }) => {
+          this.venues.set(venuesResponse.data);
+          this.users.set(usersResponse.data);
+          this.meta.set(usersResponse.meta);
+        },
+        error: () => {
+          this.error.set('We could not load users.');
+          this.venues.set([]);
+          this.users.set([]);
+          this.meta.set(null);
+        },
+      });
   }
 
   toggleVenueSelection(venueId: number, checked: boolean): void {
@@ -97,7 +102,7 @@ export class UserManagementFacade {
     });
   }
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.error.set(null);
 
     if (this.createForm.invalid) {
@@ -120,51 +125,56 @@ export class UserManagementFacade {
 
     this.saving.set(true);
 
-    try {
-      await firstValueFrom(
-        this.usersApi.create({
-          name: this.createForm.controls.name.getRawValue(),
-          email: this.createForm.controls.email.getRawValue(),
-          password: this.createForm.controls.password.getRawValue(),
-          password_confirmation: this.createForm.controls.passwordConfirmation.getRawValue(),
-          role: this.createForm.controls.role.getRawValue() as UserRole,
-          ...(this.isStaffRole() ? { venue_ids: this.selectedVenueIds() } : {}),
+    this.usersApi
+      .create({
+        name: this.createForm.controls.name.getRawValue(),
+        email: this.createForm.controls.email.getRawValue(),
+        password: this.createForm.controls.password.getRawValue(),
+        password_confirmation: this.createForm.controls.passwordConfirmation.getRawValue(),
+        role: this.createForm.controls.role.getRawValue() as UserRole,
+        ...(this.isStaffRole() ? { venue_ids: this.selectedVenueIds() } : {}),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.saving.set(false);
         }),
-      );
+      )
+      .subscribe({
+        next: () => {
+          this.notifications.show({
+            tone: 'success',
+            title: 'User created successfully.',
+          });
 
-      this.notifications.show({
-        tone: 'success',
-        title: 'User created successfully.',
+          this.createForm.reset({
+            name: '',
+            email: '',
+            password: '',
+            passwordConfirmation: '',
+            role: 'customer',
+          });
+          this.selectedVenueIds.set([]);
+          this.loadDependencies();
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'The user could not be created.'));
+        },
       });
-
-      this.createForm.reset({
-        name: '',
-        email: '',
-        password: '',
-        passwordConfirmation: '',
-        role: 'customer',
-      });
-      this.selectedVenueIds.set([]);
-      await this.loadDependencies();
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'The user could not be created.'));
-    } finally {
-      this.saving.set(false);
-    }
   }
 
-  async applyFilters(): Promise<void> {
-    await this.loadDependencies(1);
+  applyFilters(): void {
+    this.loadDependencies(1);
   }
 
-  async goToPage(page: number): Promise<void> {
+  goToPage(page: number): void {
     const meta = this.meta();
 
     if (!meta || page < 1 || page > meta.last_page) {
       return;
     }
 
-    await this.loadDependencies(page);
+    this.loadDependencies(page);
   }
 
   roleLabel(role: User['role']): string {

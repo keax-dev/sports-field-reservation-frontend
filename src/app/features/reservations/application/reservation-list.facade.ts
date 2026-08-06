@@ -1,6 +1,7 @@
-import { inject, Service, signal } from '@angular/core';
+import { DestroyRef, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { catchError, finalize, forkJoin, map, of } from 'rxjs';
 import {
   PAYMENT_STATUS_LABELS,
   RESERVATION_STATUS_LABELS,
@@ -17,6 +18,7 @@ export class ReservationListFacade {
   private readonly formBuilder = inject(FormBuilder);
   private readonly reservationsApi = inject(ReservationsApi);
   private readonly venuesApi = inject(VenuesApi);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly reservations = signal<Reservation[]>([]);
   readonly meta = signal<PaginationMeta | null>(null);
@@ -35,51 +37,56 @@ export class ReservationListFacade {
   readonly paymentTone = paymentStatusTone;
 
   constructor() {
-    void this.loadReservations();
+    this.loadReservations();
   }
 
-  async loadReservations(page = 1): Promise<void> {
+  loadReservations(page = 1): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const status = this.filtersForm.controls.status.getRawValue();
-      const dateFrom = this.filtersForm.controls.dateFrom.getRawValue();
-      const dateTo = this.filtersForm.controls.dateTo.getRawValue();
+    const status = this.filtersForm.controls.status.getRawValue();
+    const dateFrom = this.filtersForm.controls.dateFrom.getRawValue();
+    const dateTo = this.filtersForm.controls.dateTo.getRawValue();
 
-      const response = await firstValueFrom(
-        this.reservationsApi.list({
-          page,
-          ...(status ? { status: status as ReservationStatus } : {}),
-          ...(dateFrom ? { dateFrom } : {}),
-          ...(dateTo ? { dateTo } : {}),
+    this.reservationsApi
+      .list({
+        page,
+        ...(status ? { status: status as ReservationStatus } : {}),
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {}),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
         }),
-      );
-
-      this.reservations.set(response.data);
-      this.meta.set(response.meta);
-      void this.loadVenueNames(response.data);
-    } catch {
-      this.error.set('We could not load your reservations.');
-      this.reservations.set([]);
-      this.meta.set(null);
-    } finally {
-      this.loading.set(false);
-    }
+      )
+      .subscribe({
+        next: (response) => {
+          this.reservations.set(response.data);
+          this.meta.set(response.meta);
+          this.loadVenueNames(response.data);
+        },
+        error: () => {
+          this.error.set('We could not load your reservations.');
+          this.reservations.set([]);
+          this.meta.set(null);
+        },
+      });
   }
 
-  async applyFilters(): Promise<void> {
-    await this.loadReservations(1);
+  applyFilters(): void {
+    this.loadReservations(1);
   }
 
-  async goToPage(page: number): Promise<void> {
+  goToPage(page: number): void {
     const meta = this.meta();
 
     if (!meta || page < 1 || page > meta.last_page) {
       return;
     }
 
-    await this.loadReservations(page);
+    this.loadReservations(page);
   }
 
   reservationStatusLabel(status: Reservation['status']): string {
@@ -98,7 +105,7 @@ export class ReservationListFacade {
     return this.venueNames()[reservation.venue_id] ?? 'Loading venue...';
   }
 
-  private async loadVenueNames(reservations: Reservation[]): Promise<void> {
+  private loadVenueNames(reservations: Reservation[]): void {
     const knownVenueNames = this.venueNames();
     const missingVenueIds = [...new Set(reservations.map((reservation) => reservation.venue_id))]
       .filter((venueId) => venueId > 0)
@@ -108,23 +115,30 @@ export class ReservationListFacade {
       return;
     }
 
-    const venueResults = await Promise.allSettled(
-      missingVenueIds.map(async (venueId) => ({
-        venueId,
-        venueName: (await firstValueFrom(this.venuesApi.get(venueId))).name,
-      })),
-    );
+    forkJoin(
+      missingVenueIds.map((venueId) =>
+        this.venuesApi.get(venueId).pipe(
+          map((venue) => ({
+            venueId,
+            venueName: venue.name,
+          })),
+          catchError(() => of(null)),
+        ),
+      ),
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((venueResults) => {
+        this.venueNames.update((currentVenueNames) => {
+          const nextVenueNames = { ...currentVenueNames };
 
-    this.venueNames.update((currentVenueNames) => {
-      const nextVenueNames = { ...currentVenueNames };
+          for (const result of venueResults) {
+            if (result !== null) {
+              nextVenueNames[result.venueId] = result.venueName;
+            }
+          }
 
-      for (const result of venueResults) {
-        if (result.status === 'fulfilled') {
-          nextVenueNames[result.value.venueId] = result.value.venueName;
-        }
-      }
-
-      return nextVenueNames;
-    });
+          return nextVenueNames;
+        });
+      });
   }
 }

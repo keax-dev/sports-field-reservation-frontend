@@ -1,7 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { finalize } from 'rxjs';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmCardImports } from '@spartan-ng/helm/card';
 import { HlmFieldImports } from '@spartan-ng/helm/field';
@@ -32,6 +33,7 @@ export class RegisterPage {
   private readonly authSession = inject(AuthSession);
   private readonly notifications = inject(NotificationStore);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly submitting = signal(false);
   readonly submitted = signal(false);
@@ -46,7 +48,7 @@ export class RegisterPage {
     tokenName: ['frontend-web'],
   });
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.submitted.set(true);
     this.serverError.set(null);
     this.validationErrors.set({});
@@ -58,30 +60,35 @@ export class RegisterPage {
 
     this.submitting.set(true);
 
-    try {
-      const session = await firstValueFrom(
-        this.authApi.register({
-          name: this.form.controls.name.getRawValue(),
-          email: this.form.controls.email.getRawValue(),
-          password: this.form.controls.password.getRawValue(),
-          password_confirmation: this.form.controls.passwordConfirmation.getRawValue(),
-          token_name: this.form.controls.tokenName.getRawValue(),
+    this.authApi
+      .register({
+        name: this.form.controls.name.getRawValue(),
+        email: this.form.controls.email.getRawValue(),
+        password: this.form.controls.password.getRawValue(),
+        password_confirmation: this.form.controls.passwordConfirmation.getRawValue(),
+        token_name: this.form.controls.tokenName.getRawValue(),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.submitting.set(false);
         }),
-      );
-
-      this.authSession.setSession(session);
-      this.notifications.show({
-        tone: 'success',
-        title: 'Your account was created.',
-        description: 'You are now signed in.',
+      )
+      .subscribe({
+        next: (session) => {
+          this.authSession.setSession(session);
+          this.notifications.show({
+            tone: 'success',
+            title: 'Your account was created.',
+            description: 'You are now signed in.',
+          });
+          void this.router.navigate(['/reservations']);
+        },
+        error: (error: unknown) => {
+          this.serverError.set(getApiErrorMessage(error, 'We could not create the account.'));
+          this.validationErrors.set(getValidationErrors(error));
+        },
       });
-      await this.router.navigate(['/reservations']);
-    } catch (error: unknown) {
-      this.serverError.set(getApiErrorMessage(error, 'We could not create the account.'));
-      this.validationErrors.set(getValidationErrors(error));
-    } finally {
-      this.submitting.set(false);
-    }
   }
 
   fieldError(fieldName: 'name' | 'email' | 'password' | 'passwordConfirmation'): string | null {

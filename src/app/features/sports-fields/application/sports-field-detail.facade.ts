@@ -1,9 +1,8 @@
-import { effect, inject, Service, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { DestroyRef, effect, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { map } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { finalize, map } from 'rxjs';
 import { AuthSession } from '../../../core/auth/auth-session';
 import { SPORT_TYPE_LABELS } from '../../../shared/constants/options';
 import { activeTone } from '../../../shared/utils/domain-presenters';
@@ -18,6 +17,7 @@ export class SportsFieldDetailFacade {
   private readonly router = inject(Router);
   private readonly formBuilder = inject(FormBuilder);
   private readonly sportsFieldsApi = inject(SportsFieldsApi);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly authSession = inject(AuthSession);
   readonly sportsField = signal<SportsField | null>(null);
@@ -54,30 +54,38 @@ export class SportsFieldDetailFacade {
       const sportsFieldId = this.sportsFieldId();
 
       if (Number.isFinite(sportsFieldId) && sportsFieldId > 0) {
-        void this.loadSportsField(sportsFieldId);
+        this.loadSportsField(sportsFieldId);
       }
     });
   }
 
-  async loadSportsField(sportsFieldId: number): Promise<void> {
+  loadSportsField(sportsFieldId: number): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const sportsField = await firstValueFrom(this.sportsFieldsApi.get(sportsFieldId));
-      this.sportsField.set(sportsField);
-      this.availability.set([]);
-      this.availabilityError.set(null);
-      void this.searchAvailability();
-    } catch {
-      this.error.set('We could not load this sports field.');
-      this.sportsField.set(null);
-    } finally {
-      this.loading.set(false);
-    }
+    this.sportsFieldsApi
+      .get(sportsFieldId)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: (sportsField) => {
+          this.sportsField.set(sportsField);
+          this.availability.set([]);
+          this.availabilityError.set(null);
+          this.searchAvailability();
+        },
+        error: () => {
+          this.error.set('We could not load this sports field.');
+          this.sportsField.set(null);
+        },
+      });
   }
 
-  async searchAvailability(): Promise<void> {
+  searchAvailability(): void {
     const sportsField = this.sportsField();
 
     if (!sportsField || this.searchForm.invalid) {
@@ -88,23 +96,28 @@ export class SportsFieldDetailFacade {
     this.availabilityLoading.set(true);
     this.availabilityError.set(null);
 
-    try {
-      const slots = await firstValueFrom(
-        this.sportsFieldsApi.getAvailability(sportsField.id, {
-          date: this.searchForm.controls.date.getRawValue(),
-          durationMinutes: Number(this.searchForm.controls.durationMinutes.getRawValue()),
+    this.sportsFieldsApi
+      .getAvailability(sportsField.id, {
+        date: this.searchForm.controls.date.getRawValue(),
+        durationMinutes: Number(this.searchForm.controls.durationMinutes.getRawValue()),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.availabilityLoading.set(false);
         }),
-      );
-
-      this.availability.set(slots);
-    } catch (error: unknown) {
-      this.availabilityError.set(
-        getApiErrorMessage(error, 'We could not load availability for the selected date.'),
-      );
-      this.availability.set([]);
-    } finally {
-      this.availabilityLoading.set(false);
-    }
+      )
+      .subscribe({
+        next: (slots) => {
+          this.availability.set(slots);
+        },
+        error: (error: unknown) => {
+          this.availabilityError.set(
+            getApiErrorMessage(error, 'We could not load availability for the selected date.'),
+          );
+          this.availability.set([]);
+        },
+      });
   }
 
   goToReservation(slot: AvailabilitySlot): void {

@@ -1,9 +1,8 @@
-import { effect, inject, Service, signal } from '@angular/core';
+import { DestroyRef, effect, inject, Service, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { map } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { finalize, map } from 'rxjs';
 import { BrowserConfirmationService } from '../../../core/browser/browser-confirmation.service';
 import { NotificationStore } from '../../../core/notifications/notification-store';
 import type { PaginationMeta } from '../../../shared/types/api.types';
@@ -22,6 +21,7 @@ export class MaintenanceBlockFacade {
   private readonly maintenanceApi = inject(MaintenanceApi);
   private readonly notifications = inject(NotificationStore);
   private readonly confirmation = inject(BrowserConfirmationService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly sportsFields = signal<SportsField[]>([]);
   readonly maintenanceBlocks = signal<MaintenanceBlock[]>([]);
@@ -57,7 +57,7 @@ export class MaintenanceBlockFacade {
         });
 
         if (sportsFieldId) {
-          void this.loadMaintenanceBlocks(1, Number(sportsFieldId));
+          this.loadMaintenanceBlocks(1, Number(sportsFieldId));
         } else {
           this.maintenanceBlocks.set([]);
           this.meta.set(null);
@@ -72,34 +72,42 @@ export class MaintenanceBlockFacade {
       }
     });
 
-    void this.loadSportsFields();
+    this.loadSportsFields();
   }
 
-  async loadSportsFields(): Promise<void> {
+  loadSportsFields(): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const response = await firstValueFrom(this.sportsFieldsApi.list({ includeInactive: true }));
-      this.sportsFields.set(response.data);
+    this.sportsFieldsApi
+      .list({ includeInactive: true })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: (response) => {
+          this.sportsFields.set(response.data);
 
-      const selectedSportsFieldId = this.form.controls.sportsFieldId.getRawValue();
+          const selectedSportsFieldId = this.form.controls.sportsFieldId.getRawValue();
 
-      if (selectedSportsFieldId) {
-        void this.loadMaintenanceBlocks(1, Number(selectedSportsFieldId));
-      }
-    } catch {
-      this.error.set('We could not load sports fields.');
-      this.sportsFields.set([]);
-    } finally {
-      this.loading.set(false);
-    }
+          if (selectedSportsFieldId) {
+            this.loadMaintenanceBlocks(1, Number(selectedSportsFieldId));
+          }
+        },
+        error: () => {
+          this.error.set('We could not load sports fields.');
+          this.sportsFields.set([]);
+        },
+      });
   }
 
-  async loadMaintenanceBlocks(
+  loadMaintenanceBlocks(
     page = 1,
     sportsFieldId = Number(this.form.controls.sportsFieldId.getRawValue()),
-  ): Promise<void> {
+  ): void {
     if (!sportsFieldId) {
       this.maintenanceBlocks.set([]);
       this.meta.set(null);
@@ -110,20 +118,28 @@ export class MaintenanceBlockFacade {
     this.blocksLoading.set(true);
     this.error.set(null);
 
-    try {
-      const response = await firstValueFrom(this.maintenanceApi.listByField(sportsFieldId, page));
-      this.maintenanceBlocks.set(response.data);
-      this.meta.set(response.meta);
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'Maintenance blocks could not be loaded.'));
-      this.maintenanceBlocks.set([]);
-      this.meta.set(null);
-    } finally {
-      this.blocksLoading.set(false);
-    }
+    this.maintenanceApi
+      .listByField(sportsFieldId, page)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.blocksLoading.set(false);
+        }),
+      )
+      .subscribe({
+        next: (response) => {
+          this.maintenanceBlocks.set(response.data);
+          this.meta.set(response.meta);
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'Maintenance blocks could not be loaded.'));
+          this.maintenanceBlocks.set([]);
+          this.meta.set(null);
+        },
+      });
   }
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.error.set(null);
 
     if (this.form.invalid) {
@@ -140,34 +156,39 @@ export class MaintenanceBlockFacade {
 
     this.saving.set(true);
 
-    try {
-      await firstValueFrom(
-        this.maintenanceApi.create(sportsFieldId, {
-          starts_at: toApiDateTime(this.form.controls.startsAt.getRawValue()),
-          ends_at: toApiDateTime(this.form.controls.endsAt.getRawValue()),
-          reason: this.form.controls.reason.getRawValue(),
+    this.maintenanceApi
+      .create(sportsFieldId, {
+        starts_at: toApiDateTime(this.form.controls.startsAt.getRawValue()),
+        ends_at: toApiDateTime(this.form.controls.endsAt.getRawValue()),
+        reason: this.form.controls.reason.getRawValue(),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.saving.set(false);
         }),
-      );
+      )
+      .subscribe({
+        next: () => {
+          this.notifications.show({
+            tone: 'success',
+            title: 'Maintenance block created successfully.',
+          });
 
-      this.notifications.show({
-        tone: 'success',
-        title: 'Maintenance block created successfully.',
+          this.form.patchValue({
+            startsAt: '',
+            endsAt: '',
+            reason: '',
+          });
+          this.loadMaintenanceBlocks();
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'The maintenance block could not be created.'));
+        },
       });
-
-      this.form.patchValue({
-        startsAt: '',
-        endsAt: '',
-        reason: '',
-      });
-      await this.loadMaintenanceBlocks();
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'The maintenance block could not be created.'));
-    } finally {
-      this.saving.set(false);
-    }
   }
 
-  async deleteBlock(block: MaintenanceBlock): Promise<void> {
+  deleteBlock(block: MaintenanceBlock): void {
     const confirmed = this.confirmation.confirm(
       `Delete maintenance block from ${new Date(block.starts_at).toLocaleString()} to ${new Date(block.ends_at).toLocaleString()}?`,
     );
@@ -179,27 +200,35 @@ export class MaintenanceBlockFacade {
     this.deletingId.set(block.id);
     this.error.set(null);
 
-    try {
-      await firstValueFrom(this.maintenanceApi.delete(block.id));
-      this.notifications.show({
-        tone: 'success',
-        title: 'Maintenance block deleted successfully.',
+    this.maintenanceApi
+      .delete(block.id)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.deletingId.set(null);
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.notifications.show({
+            tone: 'success',
+            title: 'Maintenance block deleted successfully.',
+          });
+          this.loadMaintenanceBlocks();
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'The maintenance block could not be deleted.'));
+        },
       });
-      await this.loadMaintenanceBlocks();
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'The maintenance block could not be deleted.'));
-    } finally {
-      this.deletingId.set(null);
-    }
   }
 
-  async goToPage(page: number): Promise<void> {
+  goToPage(page: number): void {
     const meta = this.meta();
 
     if (!meta || page < 1 || page > meta.last_page) {
       return;
     }
 
-    await this.loadMaintenanceBlocks(page);
+    this.loadMaintenanceBlocks(page);
   }
 }

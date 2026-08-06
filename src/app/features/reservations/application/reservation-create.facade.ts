@@ -1,9 +1,9 @@
-import { computed, effect, inject, Service, signal } from '@angular/core';
+import { computed, DestroyRef, effect, inject, Service, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { map } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { EMPTY, expand, finalize, forkJoin, map, of, reduce } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { AuthSession } from '../../../core/auth/auth-session';
 import { NotificationStore } from '../../../core/notifications/notification-store';
 import { PAYMENT_METHOD_OPTIONS, SPORT_TYPE_LABELS } from '../../../shared/constants/options';
@@ -27,6 +27,7 @@ export class ReservationCreateFacade {
   private readonly reservationsApi = inject(ReservationsApi);
   private readonly sportsFieldsApi = inject(SportsFieldsApi);
   private readonly usersApi = inject(UsersApi);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly authSession = inject(AuthSession);
   readonly notifications = inject(NotificationStore);
@@ -193,28 +194,37 @@ export class ReservationCreateFacade {
       }
     });
 
-    void this.loadDependencies();
+    this.loadDependencies();
   }
 
-  async loadDependencies(): Promise<void> {
+  loadDependencies(): void {
     this.loading.set(true);
     this.formError.set(null);
 
-    try {
-      this.sportsFields.set(await this.loadAllSportsFields());
-
-      if (this.authSession.isAdmin()) {
-        const customersResponse = await firstValueFrom(this.usersApi.list({ role: 'customer' }));
-        this.customers.set(customersResponse.data);
-      }
-    } catch {
-      this.formError.set('We could not load the data needed to create a reservation.');
-    } finally {
-      this.loading.set(false);
-    }
+    forkJoin({
+      sportsFields: this.loadAllSportsFields(),
+      customers: this.authSession.isAdmin()
+        ? this.usersApi.list({ role: 'customer' }).pipe(map((response) => response.data))
+        : of([] as User[]),
+    })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: ({ sportsFields, customers }) => {
+          this.sportsFields.set(sportsFields);
+          this.customers.set(customers);
+        },
+        error: () => {
+          this.formError.set('We could not load the data needed to create a reservation.');
+        },
+      });
   }
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.formError.set(null);
 
     if (this.form.invalid) {
@@ -232,55 +242,59 @@ export class ReservationCreateFacade {
 
     this.submitting.set(true);
 
-    try {
-      const customerId = this.form.controls.customerId.getRawValue();
+    const customerId = this.form.controls.customerId.getRawValue();
 
-      const createdReservation = await firstValueFrom(
-        this.reservationsApi.create({
-          ...(!this.authSession.isCustomer() && customerId
-            ? { customer_id: Number(customerId) }
-            : {}),
-          sports_field_id: Number(this.form.controls.sportsFieldId.getRawValue()),
-          starts_at: toApiDateTime(this.form.controls.startsAt.getRawValue()),
-          ends_at: toApiDateTime(this.form.controls.endsAt.getRawValue()),
-          payment_method:
-            this.form.controls.paymentMethod.getRawValue() === ''
-              ? null
-              : (this.form.controls.paymentMethod.getRawValue() as PaymentMethod),
-          notes: this.form.controls.notes.getRawValue() || null,
-          auto_confirm: this.authSession.isBackoffice()
-            ? this.form.controls.autoConfirm.getRawValue()
-            : false,
+    this.reservationsApi
+      .create({
+        ...(!this.authSession.isCustomer() && customerId
+          ? { customer_id: Number(customerId) }
+          : {}),
+        sports_field_id: Number(this.form.controls.sportsFieldId.getRawValue()),
+        starts_at: toApiDateTime(this.form.controls.startsAt.getRawValue()),
+        ends_at: toApiDateTime(this.form.controls.endsAt.getRawValue()),
+        payment_method:
+          this.form.controls.paymentMethod.getRawValue() === ''
+            ? null
+            : (this.form.controls.paymentMethod.getRawValue() as PaymentMethod),
+        notes: this.form.controls.notes.getRawValue() || null,
+        auto_confirm: this.authSession.isBackoffice()
+          ? this.form.controls.autoConfirm.getRawValue()
+          : false,
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.submitting.set(false);
         }),
-      );
-
-      this.notifications.show({
-        tone: 'success',
-        title: 'Reservation created successfully.',
+      )
+      .subscribe({
+        next: (createdReservation) => {
+          this.notifications.show({
+            tone: 'success',
+            title: 'Reservation created successfully.',
+          });
+          void this.router.navigate(['/reservations', createdReservation.id]);
+        },
+        error: (error: unknown) => {
+          this.formError.set(getApiErrorMessage(error, 'The reservation could not be created.'));
+        },
       });
-      await this.router.navigate(['/reservations', createdReservation.id]);
-    } catch (error: unknown) {
-      this.formError.set(getApiErrorMessage(error, 'The reservation could not be created.'));
-    } finally {
-      this.submitting.set(false);
-    }
   }
 
   sportTypeLabel = (sportType: keyof typeof SPORT_TYPE_LABELS) => SPORT_TYPE_LABELS[sportType];
 
-  private async loadAllSportsFields(): Promise<SportsField[]> {
-    const sportsFields: SportsField[] = [];
-    let page = 1;
-
-    while (true) {
-      const response = await firstValueFrom(this.sportsFieldsApi.list({ page }));
-      sportsFields.push(...response.data);
-
-      if (page >= response.meta.last_page) {
-        return sportsFields;
-      }
-
-      page += 1;
-    }
+  private loadAllSportsFields(): Observable<SportsField[]> {
+    return this.sportsFieldsApi.list({ page: 1 }).pipe(
+      expand((response) =>
+        response.meta.current_page < response.meta.last_page
+          ? this.sportsFieldsApi.list({ page: response.meta.current_page + 1 })
+          : EMPTY,
+      ),
+      map((response) => response.data),
+      reduce(
+        (allSportsFields, pageSportsFields) => [...allSportsFields, ...pageSportsFields],
+        [] as SportsField[],
+      ),
+    );
   }
 }

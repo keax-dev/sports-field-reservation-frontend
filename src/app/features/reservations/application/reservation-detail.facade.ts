@@ -1,9 +1,8 @@
-import { effect, inject, Service, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { DestroyRef, effect, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { map } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { finalize, map } from 'rxjs';
 import {
   PAYMENT_METHOD_OPTIONS,
   PAYMENT_STATUS_LABELS,
@@ -19,6 +18,7 @@ export class ReservationDetailFacade {
   private readonly route = inject(ActivatedRoute);
   private readonly formBuilder = inject(FormBuilder);
   private readonly reservationsApi = inject(ReservationsApi);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly reservation = signal<Reservation | null>(null);
   readonly loading = signal(true);
@@ -51,27 +51,35 @@ export class ReservationDetailFacade {
       const reservationId = this.reservationId();
 
       if (Number.isFinite(reservationId) && reservationId > 0) {
-        void this.loadReservation(reservationId);
+        this.loadReservation(reservationId);
       }
     });
   }
 
-  async loadReservation(reservationId: number): Promise<void> {
+  loadReservation(reservationId: number): void {
     this.loading.set(true);
     this.actionError.set(null);
 
-    try {
-      const reservation = await firstValueFrom(this.reservationsApi.get(reservationId));
-      this.reservation.set(reservation);
-    } catch {
-      this.actionError.set('We could not load this reservation.');
-      this.reservation.set(null);
-    } finally {
-      this.loading.set(false);
-    }
+    this.reservationsApi
+      .get(reservationId)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
+        }),
+      )
+      .subscribe({
+        next: (reservation) => {
+          this.reservation.set(reservation);
+        },
+        error: () => {
+          this.actionError.set('We could not load this reservation.');
+          this.reservation.set(null);
+        },
+      });
   }
 
-  async confirmReservation(): Promise<void> {
+  confirmReservation(): void {
     const reservation = this.reservation();
 
     if (!reservation || this.confirmForm.invalid) {
@@ -82,23 +90,30 @@ export class ReservationDetailFacade {
     this.processingConfirm.set(true);
     this.actionError.set(null);
 
-    try {
-      const updatedReservation = await firstValueFrom(
-        this.reservationsApi.confirm(reservation.id, {
-          payment_method: this.confirmForm.controls.paymentMethod.getRawValue() as PaymentMethod,
-          payment_reference: this.confirmForm.controls.paymentReference.getRawValue() || null,
+    this.reservationsApi
+      .confirm(reservation.id, {
+        payment_method: this.confirmForm.controls.paymentMethod.getRawValue() as PaymentMethod,
+        payment_reference: this.confirmForm.controls.paymentReference.getRawValue() || null,
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.processingConfirm.set(false);
         }),
-      );
-
-      this.reservation.set(updatedReservation);
-    } catch (error: unknown) {
-      this.actionError.set(getApiErrorMessage(error, 'The reservation could not be confirmed.'));
-    } finally {
-      this.processingConfirm.set(false);
-    }
+      )
+      .subscribe({
+        next: (updatedReservation) => {
+          this.reservation.set(updatedReservation);
+        },
+        error: (error: unknown) => {
+          this.actionError.set(
+            getApiErrorMessage(error, 'The reservation could not be confirmed.'),
+          );
+        },
+      });
   }
 
-  async cancelReservation(): Promise<void> {
+  cancelReservation(): void {
     const reservation = this.reservation();
 
     if (!reservation || this.cancelForm.invalid) {
@@ -109,19 +124,26 @@ export class ReservationDetailFacade {
     this.processingCancel.set(true);
     this.actionError.set(null);
 
-    try {
-      const updatedReservation = await firstValueFrom(
-        this.reservationsApi.cancel(reservation.id, {
-          reason: this.cancelForm.controls.reason.getRawValue(),
+    this.reservationsApi
+      .cancel(reservation.id, {
+        reason: this.cancelForm.controls.reason.getRawValue(),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.processingCancel.set(false);
         }),
-      );
-
-      this.reservation.set(updatedReservation);
-    } catch (error: unknown) {
-      this.actionError.set(getApiErrorMessage(error, 'The reservation could not be cancelled.'));
-    } finally {
-      this.processingCancel.set(false);
-    }
+      )
+      .subscribe({
+        next: (updatedReservation) => {
+          this.reservation.set(updatedReservation);
+        },
+        error: (error: unknown) => {
+          this.actionError.set(
+            getApiErrorMessage(error, 'The reservation could not be cancelled.'),
+          );
+        },
+      });
   }
 
   reservationStatusLabel(status: Reservation['status']): string {

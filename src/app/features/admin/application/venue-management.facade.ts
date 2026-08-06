@@ -1,6 +1,7 @@
-import { inject, Service, signal } from '@angular/core';
+import { DestroyRef, inject, Service, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, Validators } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { finalize } from 'rxjs';
 import { NotificationStore } from '../../../core/notifications/notification-store';
 import type { Venue } from '../../../shared/types/domain.types';
 import { activeTone } from '../../../shared/utils/domain-presenters';
@@ -12,6 +13,7 @@ export class VenueManagementFacade {
   private readonly formBuilder = inject(FormBuilder);
   private readonly venuesApi = inject(VenuesApi);
   private readonly notifications = inject(NotificationStore);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly venues = signal<Venue[]>([]);
   readonly loading = signal(true);
@@ -29,28 +31,33 @@ export class VenueManagementFacade {
   });
 
   constructor() {
-    void this.loadVenues();
+    this.loadVenues();
   }
 
-  async loadVenues(): Promise<void> {
+  loadVenues(): void {
     this.loading.set(true);
     this.error.set(null);
 
-    try {
-      const response = await firstValueFrom(
-        this.venuesApi.list({
-          includeInactive: true,
-          includeFields: true,
+    this.venuesApi
+      .list({
+        includeInactive: true,
+        includeFields: true,
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.loading.set(false);
         }),
-      );
-
-      this.venues.set(response.data);
-    } catch {
-      this.error.set('We could not load venues.');
-      this.venues.set([]);
-    } finally {
-      this.loading.set(false);
-    }
+      )
+      .subscribe({
+        next: (response) => {
+          this.venues.set(response.data);
+        },
+        error: () => {
+          this.error.set('We could not load venues.');
+          this.venues.set([]);
+        },
+      });
   }
 
   editVenue(venue: Venue): void {
@@ -75,7 +82,7 @@ export class VenueManagementFacade {
     });
   }
 
-  async submit(): Promise<void> {
+  submit(): void {
     this.error.set(null);
 
     if (this.form.invalid) {
@@ -85,37 +92,37 @@ export class VenueManagementFacade {
 
     this.saving.set(true);
 
-    try {
-      const payload = {
-        name: this.form.controls.name.getRawValue(),
-        address: this.form.controls.address.getRawValue(),
-        city: this.form.controls.city.getRawValue(),
-        description: this.form.controls.description.getRawValue() || null,
-        is_active: this.form.controls.isActive.getRawValue(),
-      };
+    const payload = {
+      name: this.form.controls.name.getRawValue(),
+      address: this.form.controls.address.getRawValue(),
+      city: this.form.controls.city.getRawValue(),
+      description: this.form.controls.description.getRawValue() || null,
+      is_active: this.form.controls.isActive.getRawValue(),
+    };
 
-      const venueId = this.editingVenueId();
+    const venueId = this.editingVenueId();
+    const request$ =
+      venueId === null ? this.venuesApi.create(payload) : this.venuesApi.update(venueId, payload);
 
-      if (venueId === null) {
-        await firstValueFrom(this.venuesApi.create(payload));
-        this.notifications.show({
-          tone: 'success',
-          title: 'Venue created successfully.',
-        });
-      } else {
-        await firstValueFrom(this.venuesApi.update(venueId, payload));
-        this.notifications.show({
-          tone: 'success',
-          title: 'Venue updated successfully.',
-        });
-      }
-
-      this.resetForm();
-      await this.loadVenues();
-    } catch (error: unknown) {
-      this.error.set(getApiErrorMessage(error, 'The venue could not be saved.'));
-    } finally {
-      this.saving.set(false);
-    }
+    request$
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.saving.set(false);
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.notifications.show({
+            tone: 'success',
+            title: venueId === null ? 'Venue created successfully.' : 'Venue updated successfully.',
+          });
+          this.resetForm();
+          this.loadVenues();
+        },
+        error: (error: unknown) => {
+          this.error.set(getApiErrorMessage(error, 'The venue could not be saved.'));
+        },
+      });
   }
 }
