@@ -1,0 +1,51 @@
+<section class="mx-auto flex w-full max-w-3xl flex-col gap-8">
+  <app-page-header
+    eyebrow="Authentication"
+    title="Sign in"
+    description="Use one of the seeded users or your own registered account to access reservation flows."
+  />
+
+  <div hlmCard class="p-6 sm:p-8">
+    <form class="space-y-6" [formGroup]="form" (ngSubmit)="submit()">
+      @if (serverError(); as errorMessage) {
+        <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {{ errorMessage }}
+        </div>
+      }
+
+      <div class="grid gap-5">
+        <div hlmField>
+          <label hlmFieldLabel for="login-email">Email</label>
+          <input id="login-email" hlmInput type="email" formControlName="email" />
+          @if (fieldError('email'); as errorMessage) {
+            <hlm-field-error forceShow>{{ errorMessage }}</hlm-field-error>
+          }
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="login-password">Password</label>
+          <input id="login-password" hlmInput type="password" formControlName="password" />
+          @if (fieldError('password'); as errorMessage) {
+            <hlm-field-error forceShow>{{ errorMessage }}</hlm-field-error>
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-slate-600">
+          No account yet?
+          <a
+            class="font-semibold text-slate-950 underline underline-offset-4"
+            routerLink="/register"
+          >
+            Create one
+          </a>
+        </p>
+
+        <button hlmBtn type="submit" [disabled]="submitting()">
+          {{ submitting() ? 'Signing in...' : 'Sign in' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</section>

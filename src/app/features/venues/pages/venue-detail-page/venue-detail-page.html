@@ -1,0 +1,122 @@
+<section class="space-y-8">
+  @if (loading()) {
+    <div
+      class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+    >
+      Loading venue...
+    </div>
+  } @else if (error(); as errorMessage) {
+    <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      {{ errorMessage }}
+    </div>
+  } @else if (venue(); as venueData) {
+    <app-page-header
+      eyebrow="Venue"
+      [title]="venueData.name"
+      [description]="venueData.description || 'This venue does not have a public description yet.'"
+      actionLabel="Back home"
+      actionLink="/"
+    />
+
+    <div class="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+      <div class="space-y-6">
+        <div hlmCard class="p-6">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="space-y-2">
+              <h2 class="text-xl font-semibold text-slate-950">{{ venueData.name }}</h2>
+              <p class="text-sm text-slate-600">{{ venueData.city }} · {{ venueData.address }}</p>
+            </div>
+
+            <app-status-badge
+              [label]="venueData.is_active ? 'Active' : 'Inactive'"
+              [tone]="toneForActive(venueData.is_active)"
+            />
+          </div>
+
+          <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">City</p>
+              <p class="mt-2 font-semibold text-slate-950">{{ venueData.city }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">Address</p>
+              <p class="mt-2 font-semibold text-slate-950">{{ venueData.address }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">Sports fields</p>
+              <p class="mt-2 font-semibold text-slate-950">{{ venueData.sports_fields_count }}</p>
+            </div>
+          </div>
+        </div>
+
+        <section class="space-y-4">
+          <div>
+            <h2 class="text-xl font-semibold text-slate-950">Sports fields</h2>
+            <p class="text-sm text-slate-600">
+              Choose a field to inspect its schedule and availability.
+            </p>
+          </div>
+
+          <div class="grid gap-4 lg:grid-cols-2">
+            @for (sportsField of venueData.sports_fields ?? []; track sportsField.id) {
+              <article hlmCard class="p-6">
+                <div class="space-y-4">
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 class="text-lg font-semibold text-slate-950">{{ sportsField.name }}</h3>
+                      <p class="text-sm text-slate-600">
+                        {{ sportTypeLabel(sportsField.sport_type) }}
+                      </p>
+                    </div>
+
+                    <app-status-badge
+                      [label]="sportsField.is_active ? 'Active' : 'Inactive'"
+                      [tone]="toneForActive(sportsField.is_active)"
+                    />
+                  </div>
+
+                  <p class="text-sm text-slate-600">
+                    {{
+                      sportsField.description || 'No description available for this sports field.'
+                    }}
+                  </p>
+
+                  <div class="flex items-center justify-between gap-4">
+                    <div>
+                      <p class="text-sm text-slate-500">Rate</p>
+                      <p class="font-semibold text-slate-950">
+                        {{ sportsField.hourly_rate | currency: 'USD' : 'symbol' : '1.0-0' }}
+                      </p>
+                    </div>
+
+                    <a
+                      hlmBtn
+                      variant="outline"
+                      size="sm"
+                      [routerLink]="['/sports-fields', sportsField.id]"
+                    >
+                      View field
+                    </a>
+                  </div>
+                </div>
+              </article>
+            }
+          </div>
+        </section>
+      </div>
+
+      <aside class="space-y-4">
+        <div hlmCard class="p-6">
+          <h2 class="text-lg font-semibold text-slate-950">Quick notes</h2>
+          <ul class="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+            <li>Availability is calculated per sports field, not at venue level.</li>
+            <li>
+              Inactive venues or fields are still visible for admins, but not for regular users.
+            </li>
+            <li>Reservations are created from the field detail screen.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  }
+</section>

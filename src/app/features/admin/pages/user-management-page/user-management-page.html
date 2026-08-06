@@ -1,0 +1,176 @@
+<section class="space-y-8">
+  <app-page-header
+    eyebrow="Admin"
+    title="User management"
+    description="Create customer, staff and admin users, then review the current directory."
+  />
+
+  @if (error(); as errorMessage) {
+    <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      {{ errorMessage }}
+    </div>
+  }
+
+  <div class="grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+    <div hlmCard class="p-6">
+      <div class="mb-5">
+        <h2 class="text-xl font-semibold text-slate-950">Create user</h2>
+        <p class="text-sm text-slate-600">
+          Staff accounts can be created together with their venue assignments.
+        </p>
+      </div>
+
+      <form class="space-y-5" [formGroup]="createForm" (ngSubmit)="submit()">
+        <div hlmField>
+          <label hlmFieldLabel for="user-name">Name</label>
+          <input id="user-name" hlmInput type="text" formControlName="name" />
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="user-email">Email</label>
+          <input id="user-email" hlmInput type="email" formControlName="email" />
+        </div>
+
+        <div class="grid gap-5 md:grid-cols-2">
+          <div hlmField>
+            <label hlmFieldLabel for="user-password">Password</label>
+            <input id="user-password" hlmInput type="password" formControlName="password" />
+          </div>
+
+          <div hlmField>
+            <label hlmFieldLabel for="user-password-confirmation">Confirm password</label>
+            <input
+              id="user-password-confirmation"
+              hlmInput
+              type="password"
+              formControlName="passwordConfirmation"
+            />
+          </div>
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="user-role">Role</label>
+          <hlm-native-select id="user-role" formControlName="role">
+            @for (option of roleOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </hlm-native-select>
+        </div>
+
+        @if (isStaffRole()) {
+          <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div>
+              <h3 class="font-semibold text-slate-950">Assigned venues</h3>
+              <p class="text-sm text-slate-600">Pick the venues this staff user can manage.</p>
+            </div>
+
+            <div class="grid gap-3">
+              @for (venue of venues(); track venue.id) {
+                <label
+                  class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+                >
+                  <input
+                    class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                    type="checkbox"
+                    [checked]="selectedVenueIds().includes(venue.id)"
+                    (change)="toggleVenueSelection(venue.id, $any($event.target).checked)"
+                  />
+                  <span class="text-sm text-slate-700">{{ venue.name }} · {{ venue.city }}</span>
+                </label>
+              }
+            </div>
+          </div>
+        }
+
+        <button hlmBtn type="submit" [disabled]="saving()">
+          {{ saving() ? 'Saving...' : 'Create user' }}
+        </button>
+      </form>
+    </div>
+
+    <div class="space-y-4">
+      <div hlmCard class="p-6">
+        <form
+          class="grid gap-4 md:grid-cols-[1fr_220px_auto]"
+          [formGroup]="filterForm"
+          (ngSubmit)="applyFilters()"
+        >
+          <div hlmField>
+            <label hlmFieldLabel for="user-search">Search</label>
+            <input id="user-search" hlmInput type="text" formControlName="search" />
+          </div>
+
+          <div hlmField>
+            <label hlmFieldLabel for="user-role-filter">Role</label>
+            <hlm-native-select id="user-role-filter" formControlName="role">
+              <option value="">All roles</option>
+              @for (option of roleOptions; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+              }
+            </hlm-native-select>
+          </div>
+
+          <div class="flex items-end">
+            <button hlmBtn variant="outline" type="submit" [disabled]="loading()">Filter</button>
+          </div>
+        </form>
+      </div>
+
+      @if (loading()) {
+        <div
+          class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+        >
+          Loading users...
+        </div>
+      }
+
+      @for (user of users(); track user.id) {
+        <article hlmCard class="p-6">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div class="space-y-2">
+              <div class="flex flex-wrap items-center gap-3">
+                <h2 class="text-lg font-semibold text-slate-950">{{ user.name }}</h2>
+                <app-status-badge [label]="roleLabel(user.role)" [tone]="toneForRole(user.role)" />
+              </div>
+              <p class="text-sm text-slate-600">{{ user.email }}</p>
+            </div>
+          </div>
+        </article>
+      }
+
+      @if (meta(); as pagination) {
+        <div
+          class="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+        >
+          <p class="text-sm text-slate-600">
+            Page {{ pagination.current_page }} of {{ pagination.last_page }} ·
+            {{ pagination.total }} users
+          </p>
+
+          <div class="flex gap-2">
+            <button
+              hlmBtn
+              variant="outline"
+              size="sm"
+              type="button"
+              (click)="goToPage(pagination.current_page - 1)"
+              [disabled]="pagination.current_page <= 1 || loading()"
+            >
+              Previous
+            </button>
+            <button
+              hlmBtn
+              variant="outline"
+              size="sm"
+              type="button"
+              (click)="goToPage(pagination.current_page + 1)"
+              [disabled]="pagination.current_page >= pagination.last_page || loading()"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</section>

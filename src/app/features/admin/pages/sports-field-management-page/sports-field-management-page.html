@@ -1,0 +1,180 @@
+<section class="space-y-8">
+  <app-page-header
+    eyebrow="Admin"
+    title="Sports field management"
+    description="Control field metadata, pricing, operating hours and active state."
+  />
+
+  @if (error(); as errorMessage) {
+    <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      {{ errorMessage }}
+    </div>
+  }
+
+  <div class="grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+    <div hlmCard class="p-6">
+      <div class="mb-5 flex items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-slate-950">
+            {{ editingSportsFieldId() ? 'Edit sports field' : 'New sports field' }}
+          </h2>
+          <p class="text-sm text-slate-600">
+            This form maps directly to the backend sports field endpoints.
+          </p>
+        </div>
+
+        @if (editingSportsFieldId()) {
+          <button hlmBtn variant="outline" size="sm" type="button" (click)="resetForm()">
+            Clear
+          </button>
+        }
+      </div>
+
+      <form class="space-y-5" [formGroup]="form" (ngSubmit)="submit()">
+        <div hlmField>
+          <label hlmFieldLabel for="field-venue-id">Venue</label>
+          <hlm-native-select id="field-venue-id" formControlName="venueId">
+            <option value="">Select a venue</option>
+            @for (venue of venues(); track venue.id) {
+              <option [value]="venue.id">{{ venue.name }} · {{ venue.city }}</option>
+            }
+          </hlm-native-select>
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="field-name">Name</label>
+          <input id="field-name" hlmInput type="text" formControlName="name" />
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="field-sport-type">Sport type</label>
+          <hlm-native-select id="field-sport-type" formControlName="sportType">
+            @for (option of sportTypeOptions; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </hlm-native-select>
+        </div>
+
+        <div class="grid gap-5 md:grid-cols-2">
+          <div hlmField>
+            <label hlmFieldLabel for="field-hourly-rate">Hourly rate</label>
+            <input
+              id="field-hourly-rate"
+              hlmInput
+              type="number"
+              min="0"
+              step="0.01"
+              formControlName="hourlyRate"
+            />
+          </div>
+
+          <div hlmField>
+            <label hlmFieldLabel for="field-max-players">Max players</label>
+            <input
+              id="field-max-players"
+              hlmInput
+              type="number"
+              min="1"
+              formControlName="maxPlayers"
+            />
+          </div>
+
+          <div hlmField>
+            <label hlmFieldLabel for="field-open-time">Open time</label>
+            <input id="field-open-time" hlmInput type="time" formControlName="openTime" />
+          </div>
+
+          <div hlmField>
+            <label hlmFieldLabel for="field-close-time">Close time</label>
+            <input id="field-close-time" hlmInput type="time" formControlName="closeTime" />
+          </div>
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="field-description">Description</label>
+          <textarea
+            id="field-description"
+            hlmTextarea
+            rows="4"
+            formControlName="description"
+          ></textarea>
+        </div>
+
+        <label
+          class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+        >
+          <input
+            class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+            type="checkbox"
+            formControlName="isActive"
+          />
+          <span class="text-sm text-slate-700"
+            >This sports field is active and can receive bookings.</span
+          >
+        </label>
+
+        <button hlmBtn type="submit" [disabled]="saving()">
+          {{
+            saving()
+              ? 'Saving...'
+              : editingSportsFieldId()
+                ? 'Update sports field'
+                : 'Create sports field'
+          }}
+        </button>
+      </form>
+    </div>
+
+    <div class="space-y-4">
+      @if (loading()) {
+        <div
+          class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+        >
+          Loading sports fields...
+        </div>
+      }
+
+      @for (sportsField of sportsFields(); track sportsField.id) {
+        <article hlmCard class="p-6">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center gap-3">
+                <h2 class="text-lg font-semibold text-slate-950">{{ sportsField.name }}</h2>
+                <app-status-badge
+                  [label]="sportsField.is_active ? 'Active' : 'Inactive'"
+                  [tone]="toneForActive(sportsField.is_active)"
+                />
+                <app-status-badge [label]="sportTypeLabel(sportsField.sport_type)" tone="info" />
+              </div>
+
+              <p class="text-sm text-slate-600">
+                {{ sportsField.venue?.name ?? 'Venue unavailable' }} · {{ sportsField.open_time }} -
+                {{ sportsField.close_time }}
+              </p>
+
+              <p class="text-sm leading-6 text-slate-600">
+                {{ sportsField.description || 'No description available.' }}
+              </p>
+
+              <p class="font-medium text-slate-950">
+                {{ sportsField.hourly_rate | currency: 'USD' : 'symbol' : '1.0-0' }}
+              </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button
+                hlmBtn
+                variant="outline"
+                size="sm"
+                type="button"
+                (click)="editSportsField(sportsField)"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  </div>
+</section>

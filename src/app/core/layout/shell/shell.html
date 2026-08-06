@@ -1,0 +1,139 @@
+<div class="min-h-screen bg-slate-50 text-slate-900">
+  <header class="border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div
+      class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
+    >
+      <div class="space-y-2">
+        <a
+          class="inline-flex items-center gap-2 text-lg font-semibold text-slate-950"
+          routerLink="/"
+        >
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white">
+            FR
+          </span>
+          FieldReserve
+        </a>
+        <p class="text-sm text-slate-600">
+          Sports field reservation workflow for customers, staff and admins.
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-3 lg:items-end">
+        <nav class="flex flex-wrap gap-2">
+          <a
+            class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+            routerLink="/"
+            routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            [routerLinkActiveOptions]="{ exact: true }"
+          >
+            Home
+          </a>
+
+          @if (authSession.isAuthenticated()) {
+            <a
+              class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              routerLink="/reservations"
+              routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            >
+              Reservations
+            </a>
+          }
+
+          @if (authSession.isBackoffice()) {
+            <a
+              class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              routerLink="/maintenance"
+              routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            >
+              Maintenance
+            </a>
+          }
+
+          @if (authSession.isAdmin()) {
+            <a
+              class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              routerLink="/admin/venues"
+              routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            >
+              Venues
+            </a>
+            <a
+              class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              routerLink="/admin/sports-fields"
+              routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            >
+              Sports fields
+            </a>
+            <a
+              class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              routerLink="/admin/users"
+              routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            >
+              Users
+            </a>
+            <a
+              class="rounded-full px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+              routerLink="/admin/staff-assignments"
+              routerLinkActive="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+            >
+              Staff assignments
+            </a>
+          }
+        </nav>
+
+        <div class="flex flex-wrap items-center gap-3">
+          @if (authSession.isAuthenticated()) {
+            <p class="text-sm font-medium text-slate-700">{{ userLabel() }}</p>
+            <button
+              hlmBtn
+              variant="outline"
+              size="sm"
+              (click)="logout()"
+              [disabled]="isLoggingOut()"
+            >
+              {{ isLoggingOut() ? 'Signing out...' : 'Sign out' }}
+            </button>
+          } @else {
+            <a hlmBtn variant="outline" size="sm" routerLink="/login">Sign in</a>
+            <a hlmBtn size="sm" routerLink="/register">Create account</a>
+          }
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8">
+    @if (notifications.current(); as notification) {
+      <div
+        class="rounded-2xl border px-4 py-3"
+        [class]="
+          notification.tone === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : notification.tone === 'error'
+              ? 'border-rose-200 bg-rose-50 text-rose-800'
+              : 'border-sky-200 bg-sky-50 text-sky-800'
+        "
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1">
+            <p class="font-semibold">{{ notification.title }}</p>
+
+            @if (notification.description) {
+              <p class="text-sm">{{ notification.description }}</p>
+            }
+          </div>
+
+          <button
+            type="button"
+            class="rounded-md px-2 py-1 text-xs font-semibold transition hover:bg-black/5"
+            (click)="notifications.clear()"
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    }
+
+    <router-outlet />
+  </main>
+</div>

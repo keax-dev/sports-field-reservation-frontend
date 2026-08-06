@@ -1,0 +1,155 @@
+<section class="space-y-8">
+  <app-page-header
+    eyebrow="Reservations"
+    title="Reservation history"
+    description="Review bookings, filter by status and move into any reservation detail to confirm or cancel it."
+    actionLabel="Create reservation"
+    actionLink="/reservations/new"
+  />
+
+  <div hlmCard class="p-6">
+    <form
+      class="grid gap-4 lg:grid-cols-[220px_1fr_1fr_auto]"
+      [formGroup]="filtersForm"
+      (ngSubmit)="applyFilters()"
+    >
+      <div hlmField>
+        <label hlmFieldLabel for="reservation-status">Status</label>
+        <hlm-native-select id="reservation-status" formControlName="status">
+          <option value="">All statuses</option>
+          @for (option of statusOptions; track option.value) {
+            <option [value]="option.value">{{ option.label }}</option>
+          }
+        </hlm-native-select>
+      </div>
+
+      <div hlmField>
+        <label hlmFieldLabel for="reservation-date-from">From</label>
+        <input id="reservation-date-from" hlmInput type="date" formControlName="dateFrom" />
+      </div>
+
+      <div hlmField>
+        <label hlmFieldLabel for="reservation-date-to">To</label>
+        <input id="reservation-date-to" hlmInput type="date" formControlName="dateTo" />
+      </div>
+
+      <div class="flex items-end">
+        <button hlmBtn type="submit" [disabled]="loading()">
+          {{ loading() ? 'Loading...' : 'Apply filters' }}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  @if (error(); as errorMessage) {
+    <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      {{ errorMessage }}
+    </div>
+  }
+
+  <div class="space-y-4">
+    @if (!loading() && reservations().length === 0) {
+      <div
+        class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+      >
+        No reservations match the current filters.
+      </div>
+    }
+
+    @for (reservation of reservations(); track reservation.id) {
+      <article hlmCard class="p-6">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-lg font-semibold text-slate-950">
+                Reservation #{{ reservation.id }}
+              </h2>
+              <app-status-badge
+                [label]="reservationStatusLabel(reservation.status)"
+                [tone]="reservationTone(reservation.status)"
+              />
+              <app-status-badge
+                [label]="paymentStatusLabel(reservation.payment_status)"
+                [tone]="paymentTone(reservation.payment_status)"
+              />
+            </div>
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <div>
+                <p class="text-sm text-slate-500">Customer</p>
+                <p class="font-medium text-slate-950">
+                  {{ reservation.customer?.name ?? 'Customer unavailable' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-sm text-slate-500">Sports field</p>
+                <p class="font-medium text-slate-950">
+                  {{ reservation.sports_field?.name ?? 'Sports field unavailable' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-sm text-slate-500">Schedule</p>
+                <p class="font-medium text-slate-950">
+                  {{ reservation.starts_at | date: 'medium' }} -
+                  {{ reservation.ends_at | date: 'shortTime' }}
+                </p>
+              </div>
+              <div>
+                <p class="text-sm text-slate-500">Total price</p>
+                <p class="font-medium text-slate-950">
+                  {{ reservation.total_price | currency: 'USD' : 'symbol' : '1.0-0' }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-3">
+            <a
+              hlmBtn
+              variant="outline"
+              size="sm"
+              [routerLink]="['/sports-fields', reservation.sports_field_id]"
+            >
+              View field
+            </a>
+            <a hlmBtn size="sm" [routerLink]="['/reservations', reservation.id]">Open detail</a>
+          </div>
+        </div>
+      </article>
+    }
+  </div>
+
+  @if (meta(); as pagination) {
+    <div
+      class="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+    >
+      <p class="text-sm text-slate-600">
+        Page {{ pagination.current_page }} of {{ pagination.last_page }} · {{ pagination.total }}
+        reservations
+      </p>
+
+      <div class="flex gap-2">
+        <button
+          hlmBtn
+          variant="outline"
+          size="sm"
+          type="button"
+          (click)="goToPage(pagination.current_page - 1)"
+          [disabled]="pagination.current_page <= 1 || loading()"
+        >
+          Previous
+        </button>
+        <button
+          hlmBtn
+          variant="outline"
+          size="sm"
+          type="button"
+          (click)="goToPage(pagination.current_page + 1)"
+          [disabled]="pagination.current_page >= pagination.last_page || loading()"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  }
+</section>

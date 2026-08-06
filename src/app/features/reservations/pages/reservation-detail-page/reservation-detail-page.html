@@ -1,0 +1,183 @@
+<section class="space-y-8">
+  @if (loading()) {
+    <div
+      class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+    >
+      Loading reservation...
+    </div>
+  } @else if (reservation(); as reservationData) {
+    <app-page-header
+      eyebrow="Reservation detail"
+      [title]="'Reservation #' + reservationData.id"
+      description="Inspect the booking details and use the actions below when the current status allows it."
+      actionLabel="Back to reservations"
+      actionLink="/reservations"
+    />
+
+    @if (actionError(); as errorMessage) {
+      <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+        {{ errorMessage }}
+      </div>
+    }
+
+    <div class="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
+      <div class="space-y-6">
+        <div hlmCard class="p-6">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div class="space-y-2">
+              <h2 class="text-xl font-semibold text-slate-950">Reservation summary</h2>
+              <p class="text-sm text-slate-600">
+                {{ reservationData.customer?.name ?? 'Customer unavailable' }} ·
+                {{ reservationData.customer?.email ?? 'Email unavailable' }}
+              </p>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <app-status-badge
+                [label]="reservationStatusLabel(reservationData.status)"
+                [tone]="reservationTone(reservationData.status)"
+              />
+              <app-status-badge
+                [label]="paymentStatusLabel(reservationData.payment_status)"
+                [tone]="paymentTone(reservationData.payment_status)"
+              />
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-4 md:grid-cols-2">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">Sports field</p>
+              <p class="mt-2 font-semibold text-slate-950">
+                {{ reservationData.sports_field?.name ?? 'Sports field unavailable' }}
+              </p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">Total price</p>
+              <p class="mt-2 font-semibold text-slate-950">
+                {{ reservationData.total_price | currency: 'USD' : 'symbol' : '1.0-0' }}
+              </p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">Starts at</p>
+              <p class="mt-2 font-semibold text-slate-950">
+                {{ reservationData.starts_at | date: 'medium' }}
+              </p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p class="text-sm text-slate-500">Ends at</p>
+              <p class="mt-2 font-semibold text-slate-950">
+                {{ reservationData.ends_at | date: 'medium' }}
+              </p>
+            </div>
+          </div>
+
+          @if (reservationData.notes) {
+            <div class="mt-6 rounded-xl border border-slate-200 bg-white p-4">
+              <p class="text-sm text-slate-500">Notes</p>
+              <p class="mt-2 text-sm leading-6 text-slate-700">{{ reservationData.notes }}</p>
+            </div>
+          }
+        </div>
+
+        @if (canConfirm(reservationData)) {
+          <div hlmCard class="p-6">
+            <div class="space-y-5">
+              <div>
+                <h2 class="text-xl font-semibold text-slate-950">Confirm reservation</h2>
+                <p class="text-sm text-slate-600">
+                  Register the payment method used when the reservation gets confirmed.
+                </p>
+              </div>
+
+              <form
+                class="grid gap-4 md:grid-cols-2"
+                [formGroup]="confirmForm"
+                (ngSubmit)="confirmReservation()"
+              >
+                <div hlmField>
+                  <label hlmFieldLabel for="confirm-payment-method">Payment method</label>
+                  <hlm-native-select id="confirm-payment-method" formControlName="paymentMethod">
+                    @for (option of paymentMethodOptions; track option.value) {
+                      <option [value]="option.value">{{ option.label }}</option>
+                    }
+                  </hlm-native-select>
+                </div>
+
+                <div hlmField>
+                  <label hlmFieldLabel for="confirm-payment-reference">Payment reference</label>
+                  <input
+                    id="confirm-payment-reference"
+                    hlmInput
+                    type="text"
+                    formControlName="paymentReference"
+                  />
+                </div>
+
+                <div class="md:col-span-2">
+                  <button hlmBtn type="submit" [disabled]="processingConfirm()">
+                    {{ processingConfirm() ? 'Confirming...' : 'Confirm reservation' }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        }
+
+        @if (canCancel(reservationData)) {
+          <div hlmCard class="p-6">
+            <div class="space-y-5">
+              <div>
+                <h2 class="text-xl font-semibold text-slate-950">Cancel reservation</h2>
+                <p class="text-sm text-slate-600">
+                  Provide a short reason so the backend keeps a clear audit trail.
+                </p>
+              </div>
+
+              <form class="space-y-4" [formGroup]="cancelForm" (ngSubmit)="cancelReservation()">
+                <div hlmField>
+                  <label hlmFieldLabel for="cancel-reason">Cancellation reason</label>
+                  <textarea
+                    id="cancel-reason"
+                    hlmTextarea
+                    rows="4"
+                    formControlName="reason"
+                  ></textarea>
+                </div>
+
+                <button hlmBtn variant="destructive" type="submit" [disabled]="processingCancel()">
+                  {{ processingCancel() ? 'Cancelling...' : 'Cancel reservation' }}
+                </button>
+              </form>
+            </div>
+          </div>
+        }
+      </div>
+
+      <aside class="space-y-4">
+        <div hlmCard class="p-6">
+          <h2 class="text-lg font-semibold text-slate-950">Booking lifecycle</h2>
+          <ul class="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+            <li>Pending reservations can still be confirmed or cancelled.</li>
+            <li>Confirmed reservations preserve payment method and confirmation timestamp.</li>
+            <li>Cancelled and expired reservations become read-only snapshots.</li>
+          </ul>
+        </div>
+
+        <div hlmCard class="p-6">
+          <h2 class="text-lg font-semibold text-slate-950">Useful links</h2>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <a
+              hlmBtn
+              variant="outline"
+              size="sm"
+              [routerLink]="['/sports-fields', reservationData.sports_field_id]"
+            >
+              Open sports field
+            </a>
+            <a hlmBtn variant="outline" size="sm" routerLink="/reservations">Back to list</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  }
+</section>

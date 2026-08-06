@@ -1,0 +1,115 @@
+<section class="space-y-8">
+  <app-page-header
+    eyebrow="Admin"
+    title="Venue management"
+    description="Create venues, edit public data and control whether each venue is active."
+  />
+
+  @if (error(); as errorMessage) {
+    <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+      {{ errorMessage }}
+    </div>
+  }
+
+  <div class="grid gap-6 xl:grid-cols-[1fr_1.3fr]">
+    <div hlmCard class="p-6">
+      <div class="mb-5 flex items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-slate-950">
+            {{ editingVenueId() ? 'Edit venue' : 'New venue' }}
+          </h2>
+          <p class="text-sm text-slate-600">
+            Keep venue metadata and activation status up to date.
+          </p>
+        </div>
+
+        @if (editingVenueId()) {
+          <button hlmBtn variant="outline" size="sm" type="button" (click)="resetForm()">
+            Clear
+          </button>
+        }
+      </div>
+
+      <form class="space-y-5" [formGroup]="form" (ngSubmit)="submit()">
+        <div hlmField>
+          <label hlmFieldLabel for="venue-name">Name</label>
+          <input id="venue-name" hlmInput type="text" formControlName="name" />
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="venue-address">Address</label>
+          <input id="venue-address" hlmInput type="text" formControlName="address" />
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="venue-city">City</label>
+          <input id="venue-city" hlmInput type="text" formControlName="city" />
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="venue-description">Description</label>
+          <textarea
+            id="venue-description"
+            hlmTextarea
+            rows="4"
+            formControlName="description"
+          ></textarea>
+        </div>
+
+        <label
+          class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+        >
+          <input
+            class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+            type="checkbox"
+            formControlName="isActive"
+          />
+          <span class="text-sm text-slate-700"
+            >This venue is active and visible for operations.</span
+          >
+        </label>
+
+        <button hlmBtn type="submit" [disabled]="saving()">
+          {{ saving() ? 'Saving...' : editingVenueId() ? 'Update venue' : 'Create venue' }}
+        </button>
+      </form>
+    </div>
+
+    <div class="space-y-4">
+      @if (loading()) {
+        <div
+          class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500"
+        >
+          Loading venues...
+        </div>
+      }
+
+      @for (venue of venues(); track venue.id) {
+        <article hlmCard class="p-6">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center gap-3">
+                <h2 class="text-lg font-semibold text-slate-950">{{ venue.name }}</h2>
+                <app-status-badge
+                  [label]="venue.is_active ? 'Active' : 'Inactive'"
+                  [tone]="toneForActive(venue.is_active)"
+                />
+              </div>
+
+              <p class="text-sm text-slate-600">{{ venue.city }} · {{ venue.address }}</p>
+              <p class="text-sm leading-6 text-slate-600">
+                {{ venue.description || 'No description available.' }}
+              </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button hlmBtn variant="outline" size="sm" type="button" (click)="editVenue(venue)">
+                Edit
+              </button>
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  </div>
+</section>

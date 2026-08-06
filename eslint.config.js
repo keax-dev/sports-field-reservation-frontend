@@ -7,7 +7,7 @@ const prettier = require('eslint-config-prettier');
 
 module.exports = defineConfig([
   {
-    ignores: ['dist/**', 'coverage/**', '.angular/**'],
+    ignores: ['dist/**', 'coverage/**', '.angular/**', 'src/app/shared/ui/spartan/**'],
   },
   {
     files: ['**/*.ts'],
@@ -32,6 +32,7 @@ module.exports = defineConfig([
           fixStyle: 'inline-type-imports',
         },
       ],
+      '@typescript-eslint/unbound-method': 'off',
       '@typescript-eslint/no-explicit-any': 'error',
       '@angular-eslint/directive-selector': [
         'error',

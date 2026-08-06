@@ -1,0 +1,69 @@
+<section class="mx-auto flex w-full max-w-4xl flex-col gap-8">
+  <app-page-header
+    eyebrow="Authentication"
+    title="Create account"
+    description="Customers can self-register here. Staff and admin users should be created from the backoffice."
+  />
+
+  <div hlmCard class="p-6 sm:p-8">
+    <form class="space-y-6" [formGroup]="form" (ngSubmit)="submit()">
+      @if (serverError(); as errorMessage) {
+        <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {{ errorMessage }}
+        </div>
+      }
+
+      <div class="grid gap-5 md:grid-cols-2">
+        <div hlmField>
+          <label hlmFieldLabel for="register-name">Full name</label>
+          <input id="register-name" hlmInput type="text" formControlName="name" />
+          @if (fieldError('name'); as errorMessage) {
+            <hlm-field-error forceShow>{{ errorMessage }}</hlm-field-error>
+          }
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="register-email">Email</label>
+          <input id="register-email" hlmInput type="email" formControlName="email" />
+          @if (fieldError('email'); as errorMessage) {
+            <hlm-field-error forceShow>{{ errorMessage }}</hlm-field-error>
+          }
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="register-password">Password</label>
+          <input id="register-password" hlmInput type="password" formControlName="password" />
+          @if (fieldError('password'); as errorMessage) {
+            <hlm-field-error forceShow>{{ errorMessage }}</hlm-field-error>
+          }
+        </div>
+
+        <div hlmField>
+          <label hlmFieldLabel for="register-password-confirmation">Confirm password</label>
+          <input
+            id="register-password-confirmation"
+            hlmInput
+            type="password"
+            formControlName="passwordConfirmation"
+          />
+          @if (fieldError('passwordConfirmation'); as errorMessage) {
+            <hlm-field-error forceShow>{{ errorMessage }}</hlm-field-error>
+          }
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-slate-600">
+          Already registered?
+          <a class="font-semibold text-slate-950 underline underline-offset-4" routerLink="/login">
+            Sign in
+          </a>
+        </p>
+
+        <button hlmBtn type="submit" [disabled]="submitting()">
+          {{ submitting() ? 'Creating account...' : 'Create account' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</section>
